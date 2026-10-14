@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 180" role="img" aria-label="ドジョウ">
+  <defs><linearGradient id="d-body" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#74613d"/><stop offset=".5" stop-color="#a98d55"/><stop offset="1" stop-color="#d6bf83"/></linearGradient></defs>
+  <g stroke="#302d25" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+    <path fill="url(#d-body)" d="M37 97c51-30 144-37 242-21 36 6 58 19 62 33-10 18-54 26-105 23-74-4-143-17-199-35Z"/>
+    <path fill="#8a7044" d="m40 97-26-29 5 31-8 25 39-17Z"/>
+    <path fill="#8f7245" d="m141 80 25-24 38 22Z"/>
+    <path fill="#9b7b49" d="m150 120 28 26 39-18Z"/>
+    <path fill="#cab079" d="M273 76c38 1 64 14 68 33-19 13-60 22-105 23 31-13 47-32 37-56Z"/>
+    <circle fill="#e4cf91" cx="311" cy="94" r="8"/><circle fill="#1e211d" cx="313" cy="93" r="4" stroke="none"/>
+    <path fill="none" d="M336 115q-17 2-29-3M334 116q12 6 17 14M333 117q13-1 21 3M328 116q9 12 11 21"/>
+  </g>
+  <g fill="#56492f"><circle cx="82" cy="91" r="5"/><circle cx="111" cy="102" r="4"/><circle cx="137" cy="86" r="6"/><circle cx="170" cy="105" r="5"/><circle cx="197" cy="88" r="4"/><circle cx="225" cy="109" r="6"/><circle cx="254" cy="91" r="4"/></g>
+  <path d="M59 102c78 14 160 23 238 18" fill="none" stroke="#ead8a1" stroke-width="4" opacity=".65"/>
+</svg>

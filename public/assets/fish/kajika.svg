@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 180" role="img" aria-label="カジカ">
+  <defs><linearGradient id="k-body" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#5e5741"/><stop offset=".52" stop-color="#8e7955"/><stop offset="1" stop-color="#c0a375"/></linearGradient><pattern id="k-mottle" width="32" height="24" patternUnits="userSpaceOnUse"><path d="m2 4 10-4 9 8-7 8L3 13Z" fill="#4a4839" opacity=".65"/><path d="m20 17 9-5 5 8-8 5Z" fill="#d0b681" opacity=".55"/></pattern></defs>
+  <g stroke="#302f29" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+    <path fill="url(#k-body)" d="M43 104c41-36 109-43 176-28 34 8 49 1 80-10 28 7 44 25 44 43-16 26-56 39-105 36-78-5-145-18-195-41Z"/>
+    <path fill="#74674a" d="m48 103-35-24 8 27-11 28 48-17Z"/>
+    <path fill="#76664a" d="m159 81 31-42 42 41Z"/>
+    <path fill="#9b8159" d="m208 131 38 37 50-42Z"/>
+    <path fill="#8f7652" d="m269 117-17 47 57-24Z"/>
+    <path fill="url(#k-mottle)" d="M43 104c41-36 109-43 176-28 34 8 49 1 80-10 28 7 44 25 44 43-16 26-56 39-105 36-78-5-145-18-195-41Z"/>
+    <circle fill="#d4bd86" cx="306" cy="88" r="13"/><circle fill="#171d1b" cx="308" cy="87" r="6" stroke="none"/>
+    <path fill="none" d="M341 116q-23 10-43-2"/>
+  </g>
+  <g fill="#382f29" opacity=".85"><path d="m84 87 18-12 15 14-10 15-19-3Z"/><path d="m129 109 18-11 17 14-9 14-20-3Z"/><path d="m179 82 16-10 14 12-8 13-17-2Z"/><path d="m223 108 18-13 16 12-9 17-20 1Z"/></g>
+</svg>
