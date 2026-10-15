@@ -5,6 +5,7 @@ export type SizeRank = '小' | '中' | '大' | '巨大';
 export type GearCategory = 'rod' | 'float' | 'hook';
 export type FishBehavior = 'calm' | 'sprinter' | 'diver' | 'trickster' | 'power';
 export type BaitId = '練り餌' | 'ミミズ' | '川虫' | 'ルアー';
+export type ConsumableBaitId = Exclude<BaitId, 'ルアー'>;
 export type DistancePreference = 'near' | 'middle' | 'far' | 'any';
 
 export interface FishData {
@@ -48,6 +49,16 @@ export interface GearData {
   control: number;
 }
 
+export interface BaitData {
+  id: BaitId;
+  name: string;
+  description: string;
+  price: number;
+  bundle: number;
+  unlockChapter: number;
+  reusable: boolean;
+}
+
 export interface FishRecord {
   firstCaughtAt: string;
   firstStage: StageId;
@@ -87,6 +98,7 @@ export interface SaveData {
   unlockedStages: StageId[];
   activeStage: StageId;
   bait: BaitId;
+  baitStock: Record<ConsumableBaitId, number>;
   storyFlags: string[];
   stageCatchCounts: Partial<Record<StageId, number>>;
 }

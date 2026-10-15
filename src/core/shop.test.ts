@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createNewSave } from './save';
-import { buyOrEquip } from './shop';
+import { baitAvailable, buyBait, buyOrEquip, consumeBait } from './shop';
 import { GEAR } from '../data/equipment';
 
 describe('shop rules', () => {
@@ -24,5 +24,24 @@ describe('shop rules', () => {
     expect(chapterReward).toMatchObject({ price:0, unlockChapter:2 });
     expect(chapterReward?.asset).toMatch('/assets/gear/');
     expect(GEAR.find((gear) => gear.id === 'rod-2')).toMatchObject({ price:0, unlockChapter:3 });
+  });
+
+  it('sells bait in affordable bundles and consumes one item per cast', () => {
+    const save = createNewSave();
+    expect(save.baitStock['練り餌']).toBe(6);
+    expect(buyBait(save, '練り餌')).toBe('bought');
+    expect(save.money).toBe(155);
+    expect(save.baitStock['練り餌']).toBe(11);
+    expect(consumeBait(save, '練り餌')).toBe(true);
+    expect(save.baitStock['練り餌']).toBe(10);
+  });
+
+  it('keeps the lure reusable and respects bait story locks', () => {
+    const save = createNewSave();
+    expect(baitAvailable(save, '川虫')).toBe(false);
+    expect(buyBait(save, '川虫')).toBe('locked');
+    expect(consumeBait(save, 'ルアー')).toBe(true);
+    expect(consumeBait(save, 'ルアー')).toBe(true);
+    expect(buyBait(save, 'ルアー')).toBe('reusable');
   });
 });

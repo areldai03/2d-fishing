@@ -1,25 +1,47 @@
 import { FISH } from '../data/fish';
 import type { BaitId, CatchItem, FishData, SaveData, SizeRank, StageId } from '../types';
 
-const RARITY_FACTOR = { 1:1, 2:.68, 3:.36, 4:.14 } as const;
+const RARITY_POINTS = { 1:70, 2:40, 3:18, 4:5 } as const;
 
-function distanceFactor(fish: FishData, cast: number): number {
+function distancePoints(fish: FishData, cast: number): number {
   const power = Math.max(0, Math.min(1, cast));
-  if (fish.distancePreference === 'near') return 1.35 - power * .55;
-  if (fish.distancePreference === 'middle') return .82 + Math.max(0, 1 - Math.abs(power - .55) * 2) * .58;
-  if (fish.distancePreference === 'far') return .72 + power * .88;
-  return 1;
+  if (fish.distancePreference === 'any') return 12;
+  const ideal = fish.distancePreference === 'near' ? .15 : fish.distancePreference === 'middle' ? .55 : .88;
+  const difference = Math.abs(power - ideal);
+  return difference <= .2 ? 18 : difference <= .42 ? 8 : 0;
 }
 
-export function encounterScore(fish: FishData, bait: BaitId, cast: number): number {
-  const baitFactor = fish.preferredBaits.includes(bait) ? 1.9 : fish.toleratedBaits.includes(bait) ? 1 : .42;
-  return fish.encounterWeight * RARITY_FACTOR[fish.rarity] * baitFactor * distanceFactor(fish, cast);
+export interface EncounterBreakdown {
+  stage: number;
+  rarity: number;
+  localDensity: number;
+  bait: number;
+  distance: number;
+  tackle: number;
+  total: number;
 }
 
-export function encounterChances(stage: StageId, bait: BaitId, cast: number): Partial<Record<FishData['id'], number>> {
+export function encounterBreakdown(fish: FishData, stage: StageId, bait: BaitId, cast: number, floatControl = 0): EncounterBreakdown {
+  if (!fish.habitat.includes(stage)) return { stage:0, rarity:0, localDensity:0, bait:0, distance:0, tackle:0, total:0 };
+  const breakdown = {
+    stage:22,
+    rarity:RARITY_POINTS[fish.rarity],
+    localDensity:Math.round(fish.encounterWeight * 22),
+    bait:fish.preferredBaits.includes(bait) ? 34 : fish.toleratedBaits.includes(bait) ? 14 : 0,
+    distance:distancePoints(fish, cast),
+    tackle:Math.round(floatControl * 18 * Math.max(0, fish.rarity - 1)),
+  };
+  return { ...breakdown, total:Object.values(breakdown).reduce((sum, points) => sum + points, 0) };
+}
+
+export function encounterScore(fish: FishData, stage: StageId, bait: BaitId, cast: number, floatControl = 0): number {
+  return encounterBreakdown(fish, stage, bait, cast, floatControl).total;
+}
+
+export function encounterChances(stage: StageId, bait: BaitId, cast: number, floatControl = 0): Partial<Record<FishData['id'], number>> {
   const candidates = Object.values(FISH).filter((fish) => fish.habitat.includes(stage));
-  const total = candidates.reduce((sum, fish) => sum + encounterScore(fish, bait, cast), 0);
-  return Object.fromEntries(candidates.map((fish) => [fish.id, encounterScore(fish, bait, cast) / total]));
+  const total = candidates.reduce((sum, fish) => sum + encounterScore(fish, stage, bait, cast, floatControl), 0);
+  return Object.fromEntries(candidates.map((fish) => [fish.id, encounterScore(fish, stage, bait, cast, floatControl) / total]));
 }
 
 export function sizeRank(fish: FishData, size: number): SizeRank {
@@ -29,9 +51,9 @@ export function sizeRank(fish: FishData, size: number): SizeRank {
   return '小';
 }
 
-export function chooseFish(stage: StageId, bait: BaitId, cast: number, random = Math.random): FishData {
+export function chooseFish(stage: StageId, bait: BaitId, cast: number, random = Math.random, floatControl = 0): FishData {
   const candidates = Object.values(FISH).filter((fish) => fish.habitat.includes(stage));
-  const weighted = candidates.map((fish) => ({ fish, weight: encounterScore(fish, bait, cast) }));
+  const weighted = candidates.map((fish) => ({ fish, weight: encounterScore(fish, stage, bait, cast, floatControl) }));
   const total = weighted.reduce((sum, item) => sum + item.weight, 0);
   let roll = random() * total;
   for (const item of weighted) {
@@ -88,6 +110,7 @@ export function portSurveyReady(save: SaveData): boolean {
 export function completeTackleShopVisit(save: SaveData): void {
   if (!save.storyFlags.includes('uzawa-intro-seen')) save.storyFlags.push('uzawa-intro-seen');
   if (!save.unlockedStages.includes('mountain-stream')) save.unlockedStages.push('mountain-stream');
+  save.baitStock['川虫'] += 5;
   save.bait = '川虫';
 }
 

@@ -16,6 +16,7 @@ export const createNewSave = (): SaveData => ({
   unlockedStages: ['campus-river'],
   activeStage: 'campus-river',
   bait: '練り餌',
+  baitStock: { '練り餌':6, 'ミミズ':4, '川虫':0 },
   storyFlags: [],
   stageCatchCounts: {},
 });
@@ -25,7 +26,9 @@ export function loadSave(): SaveData {
     const raw = localStorage.getItem(KEY);
     if (!raw) return createNewSave();
     const parsed = JSON.parse(raw) as SaveData;
-    return parsed.version === 1 ? { ...createNewSave(), ...parsed } : createNewSave();
+    if (parsed.version !== 1) return createNewSave();
+    const defaults = createNewSave();
+    return { ...defaults, ...parsed, baitStock:{ ...defaults.baitStock, ...parsed.baitStock } };
   } catch {
     return createNewSave();
   }

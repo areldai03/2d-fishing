@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { FISH } from '../data/fish';
 import { createNewSave } from './save';
-import { chooseFish, completeTackleShopVisit, encounterChances, encounterScore, makeCatch, portSurveyReady, recordCatch, releaseCatch, sellBasket, sizeRank, streamSurveyReady } from './fishing';
-import { biteWindowMs, canLandFish, createFightState, getFightBeat, landingTolerance, specimenPower, stepFight } from './fight';
+import { chooseFish, completeTackleShopVisit, encounterBreakdown, encounterChances, encounterScore, makeCatch, portSurveyReady, recordCatch, releaseCatch, sellBasket, sizeRank, streamSurveyReady } from './fishing';
+import { biteWindowMs, canLandFish, createFightState, fightDifficultyRating, getFightBeat, landingTolerance, specimenPower, stepFight } from './fight';
 
 describe('fishing rules', () => {
   it('uses species-specific size thresholds', () => {
@@ -20,13 +20,22 @@ describe('fishing rules', () => {
   });
 
   it('makes rarity, bait and habitat distance independently affect encounters', () => {
-    const common = encounterScore(FISH.oikawa, '川虫', .2);
-    const rarerClone = encounterScore({ ...FISH.oikawa, rarity:3 }, '川虫', .2);
+    const common = encounterScore(FISH.oikawa, 'campus-river', '川虫', .2);
+    const rarerClone = encounterScore({ ...FISH.oikawa, rarity:3 }, 'campus-river', '川虫', .2);
     expect(common).toBeGreaterThan(rarerClone);
-    expect(encounterScore(FISH.dojou, 'ミミズ', .2)).toBeGreaterThan(encounterScore(FISH.dojou, '練り餌', .2));
-    expect(encounterScore(FISH.dojou, '練り餌', .2)).toBeGreaterThan(encounterScore(FISH.dojou, 'ルアー', .2));
-    expect(encounterScore(FISH.koi, '練り餌', .9)).toBeGreaterThan(encounterScore(FISH.koi, '練り餌', .1));
-    expect(encounterScore(FISH.oikawa, '川虫', .1)).toBeGreaterThan(encounterScore(FISH.oikawa, '川虫', .9));
+    expect(encounterScore(FISH.dojou, 'campus-river', 'ミミズ', .2)).toBeGreaterThan(encounterScore(FISH.dojou, 'campus-river', '練り餌', .2));
+    expect(encounterScore(FISH.dojou, 'campus-river', '練り餌', .2)).toBeGreaterThan(encounterScore(FISH.dojou, 'campus-river', 'ルアー', .2));
+    expect(encounterScore(FISH.koi, 'campus-river', '練り餌', .9)).toBeGreaterThan(encounterScore(FISH.koi, 'campus-river', '練り餌', .1));
+    expect(encounterScore(FISH.oikawa, 'campus-river', '川虫', .1)).toBeGreaterThan(encounterScore(FISH.oikawa, 'campus-river', '川虫', .9));
+    expect(encounterScore(FISH.oikawa, 'mountain-stream', '川虫', .1)).toBe(0);
+  });
+
+  it('uses additive encounter points and lets better floats help detect rare fish', () => {
+    const basic = encounterBreakdown(FISH.namazu, 'campus-river', 'ミミズ', .85, 0);
+    const improved = encounterBreakdown(FISH.namazu, 'campus-river', 'ミミズ', .85, .2);
+    expect(basic.total).toBe(basic.stage + basic.rarity + basic.localDensity + basic.bait + basic.distance + basic.tackle);
+    expect(improved.tackle).toBeGreaterThan(basic.tackle);
+    expect(encounterChances('campus-river', 'ミミズ', .85, .2).namazu).toBeGreaterThan(encounterChances('campus-river', 'ミミズ', .85, 0).namazu!);
   });
 
   it('exposes normalized encounter chances for balancing and UI checks', () => {
@@ -74,6 +83,7 @@ describe('fishing rules', () => {
     expect(save.storyFlags).toContain('uzawa-intro-seen');
     expect(save.unlockedStages).toContain('mountain-stream');
     expect(save.bait).toBe('川虫');
+    expect(save.baitStock['川虫']).toBe(5);
   });
 
   it('keeps a released fish in the observation record but removes it from the sell basket', () => {
@@ -131,6 +141,15 @@ describe('fishing rules', () => {
     expect(biteWindowMs(FISH.nijimasu, 0, 0)).toBeGreaterThanOrEqual(1200);
   });
 
+  it('rates large fish as harder and equipped tackle as more manageable', () => {
+    const fish = FISH.suzuki;
+    const small = fightDifficultyRating(fish, specimenPower(fish, fish.minSize), 0, 0);
+    const giant = fightDifficultyRating(fish, specimenPower(fish, fish.maxSize), 0, 0);
+    const equipped = fightDifficultyRating(fish, specimenPower(fish, fish.maxSize), .34, .32);
+    expect(giant).toBeGreaterThan(small);
+    expect(equipped).toBeLessThanOrEqual(giant);
+  });
+
   it('breaks the line for every species when the player only holds reel', () => {
     for (const fish of Object.values(FISH)) {
       let state = createFightState(fish, .8);
@@ -155,8 +174,8 @@ describe('fishing rules', () => {
     released.elapsed = 1.9;
     const releasedStart = released.distance;
     for (let frame = 0; frame < 16; frame++) released = stepFight(released, .05, fish, { reeling:false, rodControl:0, hookControl:0 }).state;
-    expect(released.distance - releasedStart).toBeGreaterThan(6);
-    expect(released.distance - releasedStart).toBeLessThan(14);
+    expect(released.distance - releasedStart).toBeGreaterThan(8);
+    expect(released.distance - releasedStart).toBeLessThan(18);
   });
 
   it('makes an unattended fish visibly flee and eventually escape', () => {

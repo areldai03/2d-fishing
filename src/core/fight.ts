@@ -29,6 +29,11 @@ export function specimenPower(fish: FishData, size: number): number {
   return .82 + normalized * .5;
 }
 
+export function fightDifficultyRating(fish: FishData, specimenScale = 1, rodControl = 0, hookControl = 0): number {
+  const adjusted = fish.difficulty * specimenScale - rodControl * .8 - hookControl * .55;
+  return Math.max(1, Math.min(5, Math.round(adjusted * 2.2)));
+}
+
 const BEATS: Record<FishBehavior, { cycle: number; warningAt: number; burstAt: number; burstEnd: number; strength: number }> = {
   calm:      { cycle: 4.8, warningAt: 1.15, burstAt: 1.75, burstEnd: 2.55, strength: .96 },
   sprinter:  { cycle: 3.85, warningAt: .95, burstAt: 1.48, burstEnd: 2.18, strength: 1.12 },
@@ -71,19 +76,19 @@ export function stepFight(current: FightState, dt: number, fish: FishData, input
 
   if (input.reeling) {
     const fatigueHelp = .62 + (1 - energy) * .46;
-    const reelRate = (19 + input.hookControl * 9) / (.95 + effectiveDifficulty * .16);
+    const reelRate = (18 + input.hookControl * 11) / (1 + effectiveDifficulty * .18);
     distance -= safeDt * reelRate * fatigueHelp * (beat.burst ? .22 : 1);
     stamina -= safeDt * (9.2 + input.hookControl * 5) * (beat.burst ? 1.18 : 1);
     tension += safeDt * (9.5 + force * 7) * (1 - input.rodControl * 1.05);
   } else {
     tension -= safeDt * (34 + input.rodControl * 18);
     stamina -= safeDt * (beat.burst ? 2.8 : .65);
-    const slackEscapeRate = (1.8 + effectiveDifficulty * .85) * (.65 + energy * .45);
+    const slackEscapeRate = (3.4 + effectiveDifficulty * 1.45) * (.72 + energy * .38) * (1 - input.rodControl * .28);
     distance += safeDt * slackEscapeRate;
   }
 
   if (beat.burst) {
-    distance += safeDt * (input.reeling ? 3.1 : 5.2 + effectiveDifficulty * 1.8) * beat.strength * force;
+    distance += safeDt * (input.reeling ? 4.6 : 7.8 + effectiveDifficulty * 2.4) * beat.strength * force;
     tension += safeDt * (input.reeling ? 96 : 1.6) * beat.strength * force * (1 - input.rodControl * .72);
   }
 
