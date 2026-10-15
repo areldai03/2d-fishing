@@ -10,6 +10,7 @@ export const createNewSave = (): SaveData => ({
   totalCaught: 0,
   records: {},
   basket: [],
+  aquarium: [],
   ownedGear: ['rod-1', 'float-1', 'hook-1'],
   equipped: { rod:'rod-1', float:'float-1', hook:'hook-1' },
   unlockedStages: ['campus-river'],

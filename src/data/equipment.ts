@@ -2,7 +2,7 @@ import type { GearData } from '../types';
 
 export const GEAR: GearData[] = [
   { id:'rod-1', category:'rod', level:1, name:'竹の釣り竿', description:'しなやかな一本。基本を覚えるには十分。', asset:'/assets/gear/rod-1.png', price:0, unlockChapter:0, control:0 },
-  { id:'rod-2', category:'rod', level:2, name:'カーボンロッド', description:'張力上昇を約19%抑え、危険域にも少し粘れる。', asset:'/assets/gear/rod-2.png', price:520, unlockChapter:1, control:.18 },
+  { id:'rod-2', category:'rod', level:2, name:'磯部調整・カーボンロッド', description:'月波港大会の記念品。張力上昇を約19%抑え、危険域にも少し粘れる。', asset:'/assets/gear/rod-2.png', price:0, unlockChapter:3, control:.18 },
   { id:'rod-3', category:'rod', level:3, name:'月穿ち竿', description:'強い流れでも粘る、古い水門の記録に残された大物用の竿。', price:2800, unlockChapter:4, control:.34 },
   { id:'float-1', category:'float', level:1, name:'赤白の浮き', description:'小さな変化を見逃さなければ頼れる。', asset:'/assets/gear/float-1.png', price:0, unlockChapter:0, control:0 },
   { id:'float-2', category:'float', level:2, name:'鵜沢調整・波読みの浮き', description:'鵜沢が渓流調査用に調整した特別品。本アタリの受付が約0.18秒長い。', asset:'/assets/gear/float-2.png', price:0, unlockChapter:2, control:.2 },

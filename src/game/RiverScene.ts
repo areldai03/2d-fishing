@@ -22,6 +22,7 @@ export class RiverScene extends Phaser.Scene {
     this.load.image('bg-campus-river-v3', '/assets/backgrounds/campus-river-pixel-v3.png');
     this.load.image('bg-mountain-stream-v3', '/assets/backgrounds/mountain-stream-pixel-v3.png');
     this.load.image('bg-mountain-stream-deep-v1', '/assets/backgrounds/mountain-stream-deep-pool-pixel-v1.png');
+    this.load.image('bg-tsukinami-port-v1', '/assets/backgrounds/tsukinami-port-pixel-v1.png');
   }
 
   create(): void {
@@ -104,7 +105,8 @@ export class RiverScene extends Phaser.Scene {
 
   private drawWorld(): void {
     const stream = this.stageId === 'mountain-stream';
-    const backgroundKey = this.deepPool ? 'bg-mountain-stream-deep-v1' : stream ? 'bg-mountain-stream-v3' : 'bg-campus-river-v3';
+    const port = this.stageId === 'tsukinami-port';
+    const backgroundKey = this.deepPool ? 'bg-mountain-stream-deep-v1' : stream ? 'bg-mountain-stream-v3' : port ? 'bg-tsukinami-port-v1' : 'bg-campus-river-v3';
     this.add.image(195, 150, backgroundKey).setDisplaySize(390, 300).setDepth(0);
     if (this.deepPool) {
       this.add.rectangle(0, 0, 390, 300, 0x071c2b, .08).setOrigin(0).setDepth(1);
@@ -112,9 +114,9 @@ export class RiverScene extends Phaser.Scene {
 
     // The source painting supplies the environment; these sparse highlights are
     // separate so the water still feels alive instead of behaving like wallpaper.
-    const waterStart = this.deepPool ? 158 : stream ? 188 : 165;
+    const waterStart = this.deepPool ? 158 : stream ? 188 : port ? 150 : 165;
     for (let i = 0; i < 5; i++) {
-      const line = this.add.rectangle(190, waterStart + i * 27, 35 + (i % 4) * 22, i % 3 === 0 ? 2 : 1, this.deepPool ? 0x8ed5d4 : stream ? 0xc9fff1 : 0xffd889, this.deepPool ? .22 : stream ? .18 : .2).setDepth(2);
+      const line = this.add.rectangle(190, waterStart + i * 27, 35 + (i % 4) * 22, i % 3 === 0 ? 2 : 1, this.deepPool ? 0x8ed5d4 : stream ? 0xc9fff1 : port ? 0xffb36b : 0xffd889, this.deepPool ? .22 : stream ? .18 : port ? .28 : .2).setDepth(2);
       this.waterLines.push(line);
     }
     if (stream) {
@@ -127,6 +129,17 @@ export class RiverScene extends Phaser.Scene {
         const leaf = this.add.rectangle(15 + i * 68, 72 + (i * 37) % 154, 3, 2, i % 2 ? 0xd58b3b : 0x8fb652, .75).setDepth(4).setAngle(i * 13);
         leaf.setData('kind', 'leaf');
         this.ambientPixels.push(leaf);
+      }
+    } else if (port) {
+      for (let i = 0; i < 14; i++) {
+        const glint = this.add.rectangle(30 + (i * 61) % 345, 152 + (i * 37) % 136, 8 + i % 5 * 6, i % 4 === 0 ? 2 : 1, i % 3 ? 0xffa75f : 0xe7d09c, .22).setDepth(2);
+        glint.setData('kind', 'glint');
+        this.ambientPixels.push(glint);
+      }
+      for (let i = 0; i < 3; i++) {
+        const gull = this.add.rectangle(250 + i * 34, 55 + i * 11, 7, 2, 0xffdfbd, .65).setDepth(4).setAngle(i % 2 ? 18 : -18);
+        gull.setData('kind', 'leaf');
+        this.ambientPixels.push(gull);
       }
     } else {
       for (let i = 0; i < 10; i++) {
@@ -145,10 +158,10 @@ export class RiverScene extends Phaser.Scene {
       this.add.ellipse(0, 0, 14, 25, 0xf3eee0).setStrokeStyle(3, 0x172c37),
       this.add.rectangle(0, -5, 11, 8, 0xe65645),
     ]).setDepth(8).setVisible(false);
-    for (let i = 0; i < 3; i++) this.ripples.push(this.add.ellipse(205, 328, 38, 12).setStrokeStyle(2, stream ? 0xc9fff1 : 0xffe2a0).setDepth(5).setVisible(false));
-    this.add.rectangle(10, 10, this.deepPool ? 186 : stream ? 154 : 174, 49, 0x091c28, .78).setOrigin(0).setStrokeStyle(1, stream ? 0x8bc5a3 : 0xd9a451, .8).setDepth(9);
-    this.add.text(18, 15, this.deepPool ? '青葉渓流・深み' : stream ? '青葉渓流' : '大学裏の川', { fontFamily:'serif', fontSize:'18px', color:'#fff4cf', stroke:'#091923', strokeThickness:3 }).setDepth(10);
-    this.add.text(18, 40, this.deepPool ? '第一章｜閉鎖取水路の下' : stream ? '第一章｜川の上流にて' : '序章｜昨日の銀色を探して', { fontFamily:'sans-serif', fontSize:'9px', color:stream ? '#bfe6d0' : '#ffd78a' }).setDepth(10);
+    for (let i = 0; i < 3; i++) this.ripples.push(this.add.ellipse(205, 328, 38, 12).setStrokeStyle(2, stream ? 0xc9fff1 : port ? 0xffc58d : 0xffe2a0).setDepth(5).setVisible(false));
+    this.add.rectangle(10, 10, this.deepPool ? 186 : stream ? 154 : port ? 164 : 174, 49, 0x091c28, .78).setOrigin(0).setStrokeStyle(1, stream ? 0x8bc5a3 : port ? 0xe28b5b : 0xd9a451, .8).setDepth(9);
+    this.add.text(18, 15, this.deepPool ? '青葉渓流・深み' : stream ? '青葉渓流' : port ? '月波港' : '大学裏の川', { fontFamily:'serif', fontSize:'18px', color:'#fff4cf', stroke:'#091923', strokeThickness:3 }).setDepth(10);
+    this.add.text(18, 40, this.deepPool ? '第一章｜閉鎖取水路の下' : stream ? '第一章｜川の上流にて' : port ? '第二章｜夕暮れの港' : '序章｜昨日の銀色を探して', { fontFamily:'sans-serif', fontSize:'9px', color:stream ? '#bfe6d0' : port ? '#ffc89a' : '#ffd78a' }).setDepth(10);
   }
 
   private makeSplash(): void {

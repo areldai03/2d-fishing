@@ -1,5 +1,5 @@
-export type FishId = 'oikawa' | 'funa' | 'ugui' | 'dojou' | 'koi' | 'bass' | 'namazu' | 'yamame' | 'ayu' | 'kajika' | 'nijimasu' | 'iwana';
-export type StageId = 'campus-river' | 'mountain-stream';
+export type FishId = 'oikawa' | 'funa' | 'ugui' | 'dojou' | 'koi' | 'bass' | 'namazu' | 'yamame' | 'ayu' | 'kajika' | 'nijimasu' | 'iwana' | 'haze' | 'aji' | 'kurodai' | 'suzuki';
+export type StageId = 'campus-river' | 'mountain-stream' | 'tsukinami-port';
 export type Rarity = 1 | 2 | 3 | 4;
 export type SizeRank = '小' | '中' | '大' | '巨大';
 export type GearCategory = 'rod' | 'float' | 'hook';
@@ -66,6 +66,13 @@ export interface CatchItem {
   value: number;
 }
 
+export type AquariumKind = 'freshwater' | 'brackish';
+
+export interface AquariumResident extends CatchItem {
+  stage: StageId;
+  addedAt: string;
+}
+
 export interface SaveData {
   version: 1;
   money: number;
@@ -74,6 +81,7 @@ export interface SaveData {
   totalCaught: number;
   records: Partial<Record<FishId, FishRecord>>;
   basket: CatchItem[];
+  aquarium: AquariumResident[];
   ownedGear: string[];
   equipped: Record<GearCategory, string>;
   unlockedStages: StageId[];
@@ -93,7 +101,7 @@ export interface StoryLine {
 export interface StorySceneData {
   id: string;
   title: string;
-  backdrop: 'lab' | 'river' | 'stream' | 'night-lab';
+  backdrop: 'lab' | 'river' | 'stream' | 'port' | 'night-lab';
   presentation?: 'novel' | 'cinematic';
   art?: string;
   archive: {

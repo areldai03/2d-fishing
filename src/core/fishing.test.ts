@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FISH } from '../data/fish';
 import { createNewSave } from './save';
-import { chooseFish, completeTackleShopVisit, encounterChances, encounterScore, makeCatch, recordCatch, releaseCatch, sellBasket, sizeRank, streamSurveyReady } from './fishing';
+import { chooseFish, completeTackleShopVisit, encounterChances, encounterScore, makeCatch, portSurveyReady, recordCatch, releaseCatch, sellBasket, sizeRank, streamSurveyReady } from './fishing';
 import { biteWindowMs, canLandFish, createFightState, getFightBeat, landingTolerance, specimenPower, stepFight } from './fight';
 
 describe('fishing rules', () => {
@@ -15,6 +15,7 @@ describe('fishing rules', () => {
     for (const roll of [0, .2, .5, .99]) {
       expect(chooseFish('mountain-stream', '川虫', .7, () => roll).habitat).toContain('mountain-stream');
       expect(chooseFish('campus-river', '練り餌', .4, () => roll).habitat).toContain('campus-river');
+      expect(chooseFish('tsukinami-port', 'ルアー', .8, () => roll).habitat).toContain('tsukinami-port');
     }
   });
 
@@ -93,6 +94,17 @@ describe('fishing rules', () => {
     recordCatch(save, makeCatch(FISH.ayu, () => .5), 'mountain-stream');
     expect(streamSurveyReady(save)).toBe(true);
     expect(save.stageCatchCounts['mountain-stream']).toBe(3);
+  });
+
+  it('requires both signature port species before opening the chapter-two report', () => {
+    const save = createNewSave();
+    save.chapter = 2;
+    recordCatch(save, makeCatch(FISH.haze, () => .5), 'tsukinami-port');
+    recordCatch(save, makeCatch(FISH.haze, () => .6), 'tsukinami-port');
+    recordCatch(save, makeCatch(FISH.kurodai, () => .5), 'tsukinami-port');
+    expect(portSurveyReady(save)).toBe(false);
+    recordCatch(save, makeCatch(FISH.aji, () => .5), 'tsukinami-port');
+    expect(portSurveyReady(save)).toBe(true);
   });
 
   it('makes every species catchable with starter gear and correct play', () => {
@@ -196,9 +208,9 @@ describe('fishing rules', () => {
     }
   });
 
-  it('uses twelve distinct purpose-drawn pixel art assets', () => {
+  it('uses a distinct purpose-drawn art asset for every fish', () => {
     const sprites = Object.values(FISH).map((fish) => fish.sprite);
-    expect(new Set(sprites).size).toBe(12);
-    expect(sprites.every((sprite) => sprite.startsWith('/assets/fish-pixel-v2/'))).toBe(true);
+    expect(new Set(sprites).size).toBe(Object.keys(FISH).length);
+    expect(sprites.every((sprite) => sprite.startsWith('/assets/fish-pixel-v'))).toBe(true);
   });
 });

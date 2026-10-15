@@ -8,7 +8,7 @@ let delayNode: DelayNode | undefined;
 let ambientSource: AudioBufferSourceNode | undefined;
 let ambientLfo: OscillatorNode | undefined;
 
-export type BgmTheme = 'home' | 'campus-river' | 'mountain-stream' | 'archive' | 'shop' | 'map' | 'story' | null;
+export type BgmTheme = 'home' | 'campus-river' | 'mountain-stream' | 'tsukinami-port' | 'archive' | 'shop' | 'map' | 'story' | null;
 
 interface MusicPattern {
   tempo: number;
@@ -24,6 +24,7 @@ const MUSIC: Record<NonNullable<BgmTheme>, MusicPattern> = {
   home: { tempo:305, lead:[64,0,67,71,0,67,62,0,64,67,71,74,71,0,67,0], bass:[40,0,40,0,43,0,38,0], chords:[[52,59,64],[55,62,67],[50,57,62],[55,59,64]], color:1250, water:.0012, swing:.06 },
   'campus-river': { tempo:270, lead:[67,69,74,0,71,69,67,64,67,69,76,74,71,0,69,0], bass:[43,0,45,0,40,0,38,0], chords:[[55,62,67],[57,64,69],[52,59,64],[50,57,62]], color:1550, water:.0045, swing:.08 },
   'mountain-stream': { tempo:235, lead:[76,78,81,0,78,76,74,71,74,76,81,83,81,78,76,0], bass:[45,0,42,0,47,0,43,0], chords:[[57,64,69],[54,61,66],[59,66,71],[55,62,67]], color:1850, water:.007, swing:.04 },
+  'tsukinami-port': { tempo:315, lead:[69,0,73,76,0,73,71,0,68,0,71,73,76,0,73,0], bass:[45,0,40,0,42,0,37,0], chords:[[57,64,69],[52,61,68],[54,61,66],[49,56,64]], color:1180, water:.004, swing:.09 },
   archive: { tempo:340, lead:[64,0,0,67,0,71,0,69,64,0,67,0,74,0,71,0], bass:[40,0,40,0,43,0,45,0], chords:[[52,59,64],[52,57,64],[55,62,67],[57,64,69]], color:1050, water:.0007, swing:.03 },
   shop: { tempo:265, lead:[67,71,74,0,71,69,72,76,74,71,69,0,67,69,71,0], bass:[43,0,47,0,45,0,48,0], chords:[[55,62,67],[59,66,71],[57,64,69],[60,67,72]], color:1450, water:.0005, swing:.11 },
   map: { tempo:300, lead:[64,67,69,0,72,71,69,67,62,64,67,0,69,67,64,0], bass:[40,0,45,0,43,0,38,0], chords:[[52,59,64],[57,64,69],[55,62,67],[50,57,62]], color:1350, water:.001, swing:.05 },
@@ -110,7 +111,7 @@ function startAmbience(pattern: MusicPattern): void {
   source.buffer = buffer;
   source.loop = true;
   filter.type = 'bandpass';
-  filter.frequency.value = activeTheme === 'mountain-stream' ? 1300 : 720;
+  filter.frequency.value = activeTheme === 'mountain-stream' ? 1300 : activeTheme === 'tsukinami-port' ? 560 : 720;
   filter.Q.value = .45;
   gain.gain.value = pattern.water;
   lfo.frequency.value = .12;

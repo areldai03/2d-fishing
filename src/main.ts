@@ -2,19 +2,22 @@ import './style.css';
 import './pattern.css';
 import { createGame } from './game/createGame';
 import { RiverScene } from './game/RiverScene';
+import { AquariumView } from './game/AquariumView';
 import { loadSave, persistSave, eraseSave } from './core/save';
-import { chooseFish, completeTackleShopVisit, makeCatch, recordCatch, releaseCatch, sellBasket, streamSurveyReady } from './core/fishing';
+import { AQUARIUM_CAPACITY, aquariumKindForFish, aquariumResidents, moveCatchToAquarium, returnResidentToBasket } from './core/aquarium';
+import { chooseFish, completeTackleShopVisit, makeCatch, portSurveyReady, recordCatch, releaseCatch, sellBasket, streamSurveyReady } from './core/fishing';
 import { biteWindowMs, canLandFish, createFightState, landingTolerance, specimenPower, stepFight, type FightState } from './core/fight';
+import { isLurePullOnCurrent, lureWindow, stepLureMarker, type PortTide } from './core/lure';
 import { buyOrEquip } from './core/shop';
 import { FISH, FISH_LIST } from './data/fish';
 import { GEAR, CATEGORY_NAMES } from './data/equipment';
 import { STAGES } from './data/stages';
 import { STORY } from './data/story';
 import { setBgm, sfx, type BgmTheme } from './audio';
-import type { BaitId, CatchItem, FishData, GearCategory, GearData, SaveData, StageId, StorySceneData } from './types';
+import type { AquariumKind, AquariumResident, BaitId, CatchItem, FishData, GearCategory, GearData, SaveData, StageId, StorySceneData } from './types';
 
-type FishingPhase = 'idle' | 'casting' | 'waiting' | 'nibble' | 'bite' | 'fight' | 'landing' | 'landing-result';
-type FishingSpot = 'edge' | 'rapid' | 'deep-pool';
+type FishingPhase = 'idle' | 'casting' | 'luring' | 'waiting' | 'nibble' | 'bite' | 'fight' | 'landing' | 'landing-result';
+type FishingSpot = 'edge' | 'rapid' | 'deep-pool' | 'harbor-wall' | 'breakwater' | 'river-mouth';
 
 class FishingApp {
   private root: HTMLElement;
@@ -40,6 +43,12 @@ class FishingApp {
   private selectedStoryArchive = 'opening';
   private currentTab = 'home';
   private fishingSpot: FishingSpot = 'rapid';
+  private lurePosition = .08;
+  private lureDirection: 1 | -1 = 1;
+  private lureHits = 0;
+  private lureFrame = 0;
+  private lureLastFrame = 0;
+  private aquariumView?: AquariumView;
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -74,7 +83,7 @@ class FishingApp {
             <img src="/assets/backgrounds/laboratory-home-pixel-v1.png" alt="夕暮れの研究室">
             <div class="lab-glow"></div><div class="screen-scan"></div><div class="dust d1"></div><div class="dust d2"></div><div class="dust d3"></div>
             <div class="home-place"><small>HOME BASE</small><strong>東雲大学・第七実験棟</strong></div>
-            <button class="lab-hotspot tank" data-lab-spot="tank" aria-label="水槽を調べる"><i></i></button>
+            <button class="lab-hotspot tank" data-lab-spot="tank" aria-label="観測水槽を開く"><i></i></button>
             <button class="lab-hotspot window" data-lab-spot="window" aria-label="窓を調べる"><i></i></button>
             <button class="lab-hotspot board" data-lab-spot="board" aria-label="ホワイトボードを調べる"><i></i></button>
             <button class="lab-hotspot laptop" data-lab-spot="laptop" aria-label="ノートパソコンを調べる"><i></i></button>
@@ -112,6 +121,7 @@ class FishingApp {
       tackle:['古い釣具箱','森野先輩の私物。「研究費では買っていない」と三回念を押された。'],
     };
     this.root.querySelectorAll<HTMLButtonElement>('[data-lab-spot]').forEach((button) => button.addEventListener('click', () => {
+      if (button.dataset.labSpot === 'tank') return this.openAquarium();
       const note = labNotes[button.dataset.labSpot ?? ''];
       if (note) this.showLabBubble(note[0], note[1]);
     }));
@@ -236,6 +246,7 @@ class FishingApp {
   private storyPortrait(speaker: string): string {
     if (speaker.includes('森野')) return '/assets/characters/morino-pixel-v1.png';
     if (speaker.includes('鵜沢')) return '/assets/characters/uzawa-pixel-v1.png';
+    if (speaker.includes('磯部')) return '/assets/characters/isobe-ren-pixel-v1.png';
     return '/assets/characters/protagonist-pixel-v1.png';
   }
 
@@ -254,11 +265,70 @@ class FishingApp {
     bubble.classList.remove('hidden');
   }
 
+  private openAquarium(requestedKind?: AquariumKind): void {
+    sfx('tap');
+    this.query('#lab-bubble').classList.add('hidden');
+    this.aquariumView?.destroy();
+    const freshwater = aquariumResidents(this.save, 'freshwater');
+    const brackish = aquariumResidents(this.save, 'brackish');
+    const kind = requestedKind ?? (!freshwater.length && brackish.length ? 'brackish' : 'freshwater');
+    const residents = kind === 'freshwater' ? freshwater : brackish;
+    let selected: AquariumResident | undefined = residents[0];
+    const overlay = this.query('#overlay');
+    overlay.innerHTML = `<div class="aquarium-dimmer"><section class="aquarium-screen ${kind}"><header><div><small>LAB OBSERVATION TANK</small><h2>研究室の観測水槽</h2></div><button id="aquarium-close" aria-label="水槽を閉じる">×</button></header><nav class="aquarium-tabs"><button data-aquarium-kind="freshwater" class="${kind === 'freshwater' ? 'active' : ''}">淡水槽 <b>${freshwater.length}/${AQUARIUM_CAPACITY}</b></button><button data-aquarium-kind="brackish" class="${kind === 'brackish' ? 'active' : ''}">汽水・海水槽 <b>${brackish.length}/${AQUARIUM_CAPACITY}</b></button></nav><div class="aquarium-tank"><canvas id="aquarium-canvas" aria-label="釣った魚が泳ぐ観測水槽"></canvas><div class="tank-caustics"></div>${residents.length ? '' : `<p class="empty-tank">まだ魚はいない。<br>釣果画面からこの水槽へ移せます。</p>`}</div><article id="aquarium-info" class="aquarium-info"></article><div class="aquarium-residents">${residents.map((resident) => { const fish = FISH[resident.fishId]; return `<button data-resident="${resident.uid}"><img src="${fish.sprite}" alt=""><span><b>${fish.name}</b><small>${resident.size.toFixed(1)} cm</small></span></button>`; }).join('')}</div><p class="aquarium-note">魚をタップすると個体記録を確認できます。水質系統ごとに最大${AQUARIUM_CAPACITY}匹。</p></section></div>`;
+    const info = overlay.querySelector<HTMLElement>('#aquarium-info')!;
+    const showInfo = (resident?: AquariumResident) => {
+      selected = resident;
+      if (!resident) {
+        info.innerHTML = `<span class="tank-icon">◇</span><div><b>空の観測水槽</b><p>次に釣れた魚を迎える準備はできている。</p></div>`;
+        return;
+      }
+      const fish = FISH[resident.fishId];
+      info.innerHTML = `<img src="${fish.sprite}" alt=""><div><small>${kind === 'freshwater' ? 'FRESHWATER' : 'BRACKISH / MARINE'} SPECIMEN</small><b>${fish.name}　${resident.size.toFixed(1)}cm</b><p>${STAGES[resident.stage].name}で観測｜${resident.rank}サイズ</p></div><button id="aquarium-remove">水槽から出す</button>`;
+      info.querySelector('#aquarium-remove')?.addEventListener('click', () => {
+        if (!selected || !returnResidentToBasket(this.save, selected.uid)) return;
+        persistSave(this.save);
+        this.aquariumView?.destroy();
+        this.openAquarium(kind);
+        this.toast(`${fish.name}を釣果籠へ戻した`);
+      });
+    };
+    showInfo(selected);
+    this.aquariumView = new AquariumView(overlay.querySelector<HTMLCanvasElement>('#aquarium-canvas')!, residents, kind, (resident) => {
+      showInfo(resident);
+      overlay.querySelectorAll('[data-resident]').forEach((button) => button.classList.toggle('selected', (button as HTMLElement).dataset.resident === resident.uid));
+      sfx('tap');
+    });
+    overlay.querySelector('#aquarium-close')?.addEventListener('click', () => {
+      this.aquariumView?.destroy();
+      this.aquariumView = undefined;
+      overlay.innerHTML = '';
+      sfx('tap');
+    });
+    overlay.querySelectorAll<HTMLButtonElement>('[data-aquarium-kind]').forEach((button) => button.addEventListener('click', () => this.openAquarium(button.dataset.aquariumKind as AquariumKind)));
+    overlay.querySelectorAll<HTMLButtonElement>('[data-resident]').forEach((button) => button.addEventListener('click', () => {
+      const resident = residents.find((item) => item.uid === button.dataset.resident);
+      showInfo(resident);
+      overlay.querySelectorAll('[data-resident]').forEach((item) => item.classList.toggle('selected', item === button));
+      sfx('tap');
+    }));
+  }
+
   private activateTab(tab: string): void {
     this.currentTab = tab;
     const activeTab = tab === 'memo' || tab === 'story-log' ? 'home' : tab;
     this.root.querySelectorAll<HTMLButtonElement>('.tabbar button').forEach((item) => item.classList.toggle('active', item.dataset.tab === activeTab));
     this.renderDock(tab);
+    if (tab === 'home' && this.save.chapter === 2 && !this.hasFlag('chapter2-intro-seen')) {
+      this.addFlag('chapter2-intro-seen');
+      if (!this.save.unlockedStages.includes('tsukinami-port')) this.save.unlockedStages.push('tsukinami-port');
+      persistSave(this.save);
+      this.playStory('chapter2Opening', () => {
+        this.renderHome();
+        this.toast('第二章「夕暮れの港」｜月波港を解放');
+      });
+      return;
+    }
     if (tab === 'fish' && this.save.chapter === 1 && this.save.activeStage === 'mountain-stream' && !this.hasFlag('stream-arrival-seen')) {
       this.addFlag('stream-arrival-seen');
       persistSave(this.save);
@@ -276,6 +346,16 @@ class FishingApp {
         this.scene?.setDeepPool(true);
         this.renderFishing();
         this.toast('新地点「深い落ち込み」｜川虫を遠くへ流そう');
+      });
+      return;
+    }
+    if (tab === 'fish' && this.save.chapter === 2 && this.save.activeStage === 'tsukinami-port' && !this.hasFlag('port-arrival-seen')) {
+      this.addFlag('port-arrival-seen');
+      persistSave(this.save);
+      this.playStory('portArrival', () => {
+        this.fishingSpot = 'harbor-wall';
+        this.renderFishing();
+        this.toast('港の基礎観測：ハゼとアジを記録しよう');
       });
     }
   }
@@ -322,7 +402,7 @@ class FishingApp {
     this.query('#menu-scene-caption').innerHTML = `<small>${config.eyebrow}</small><strong>${config.title}</strong>`;
     const pins = this.query('#map-pins');
     if (tab !== 'map') { pins.innerHTML = ''; return; }
-    pins.innerHTML = `<button data-map-stage="mountain-stream" class="map-pin stream ${this.save.unlockedStages.includes('mountain-stream') ? '' : 'locked'}"><i></i><span>青葉渓流<small>${this.save.unlockedStages.includes('mountain-stream') ? '山道・バス2本' : '未調査'}</small></span></button><button data-map-stage="campus-river" class="map-pin river"><i></i><span>大学裏の川<small>研究室から徒歩3分</small></span></button>`;
+    pins.innerHTML = `<button data-map-stage="tsukinami-port" class="map-pin port ${this.save.unlockedStages.includes('tsukinami-port') ? '' : 'locked'}"><i></i><span>月波港<small>${this.save.unlockedStages.includes('tsukinami-port') ? '河口・バス20分' : '未調査'}</small></span></button><button data-map-stage="mountain-stream" class="map-pin stream ${this.save.unlockedStages.includes('mountain-stream') ? '' : 'locked'}"><i></i><span>青葉渓流<small>${this.save.unlockedStages.includes('mountain-stream') ? '山道・バス2本' : '未調査'}</small></span></button><button data-map-stage="campus-river" class="map-pin river"><i></i><span>大学裏の川<small>研究室から徒歩3分</small></span></button>`;
     pins.querySelectorAll<HTMLButtonElement>('[data-map-stage]').forEach((button) => button.addEventListener('click', () => this.travelTo(button.dataset.mapStage as StageId)));
   }
 
@@ -331,22 +411,28 @@ class FishingApp {
     const quest = this.currentQuest();
     const reportReady = this.save.chapter === 1 && this.hasFlag('uzawa-intro-seen') && streamSurveyReady(this.save) && !this.hasFlag('stream-mid-report-seen');
     const completeReady = this.save.chapter === 1 && this.hasFlag('uzawa-intro-seen') && this.hasFlag('iwana-challenge-seen');
-    const actionReady = reportReady || completeReady;
+    const portReportReady = this.save.chapter === 2 && portSurveyReady(this.save) && !this.hasFlag('port-mid-report-seen');
+    const chapter2CompleteReady = this.save.chapter === 2 && this.hasFlag('tournament-suzuki-seen');
+    const actionReady = reportReady || completeReady || portReportReady || chapter2CompleteReady;
     const needsShopIntro = this.save.chapter === 1 && !this.hasFlag('uzawa-intro-seen');
-    const chapterLabel = this.save.chapter === 0 ? '序章' : this.save.chapter === 1 ? '第一章' : '第一章 完了';
+    const chapterLabel = this.save.chapter === 0 ? '序章' : this.save.chapter === 1 ? '第一章' : this.save.chapter === 2 ? '第二章' : '第二章 完了';
+    const chapterTitle = this.save.chapter === 0 ? '昨日の銀色を探して' : this.save.chapter === 1 ? '川の上流にて' : this.save.chapter === 2 ? '夕暮れの港' : '夜へ続く水路';
+    const primaryLabel = chapter2CompleteReady ? '港の最終報告をまとめる' : portReportReady ? '潮汐データを整理する' : completeReady ? '最終報告をまとめる' : reportReady ? '中間報告をまとめる' : needsShopIntro ? '月波釣具店へ行く' : this.save.chapter === 0 ? '大学裏の川へ行く' : '釣行を続ける';
     this.query('#dock').innerHTML = `<div class="home-dock">
-      <div class="home-header"><div><small>${chapterLabel}</small><h2>${this.save.chapter === 0 ? '昨日の銀色を探して' : '川の上流にて'}</h2></div><span class="clock">18:42</span></div>
+      <div class="home-header"><div><small>${chapterLabel}</small><h2>${chapterTitle}</h2></div><span class="clock">18:42</span></div>
       <article class="quest-card ${actionReady ? 'ready' : ''}"><small>CURRENT OBJECTIVE</small><h3>${quest.title}</h3><p>${quest.description}</p><div class="quest-progress"><i style="width:${quest.progress}%"></i></div><em>${quest.counter}</em></article>
       <div class="home-actions">
-        <button id="home-primary" class="pixel-button">${completeReady ? '最終報告をまとめる' : reportReady ? '中間報告をまとめる' : needsShopIntro ? '月波釣具店へ行く' : this.save.chapter === 0 ? '大学裏の川へ行く' : '釣行を続ける'}<small>${actionReady || needsShopIntro ? '第一章の物語を進める' : '装備を確認して出発'}</small></button>
+        <button id="home-primary" class="pixel-button">${primaryLabel}<small>${actionReady || needsShopIntro ? `${chapterLabel}の物語を進める` : '装備を確認して出発'}</small></button>
         <div class="home-side-actions"><button id="home-note" class="note-button">観測メモ<span>${Object.keys(this.save.records).length}種 / ${this.save.totalCaught}匹</span></button><button id="home-story-log" class="note-button story-log-button">回想ログ<span>出来事を読み返す</span></button></div>
       </div>
-      <p class="lab-message">${this.save.chapter >= 2 ? '解析完了。第一章の観測記録は保存済みです。' : this.save.chapter === 0 ? '昨夜の計算ジョブ：完了　結果ファイルを保存済み' : '次の計算ジョブ：準備中　観測記録を整理しています'}</p>
+      <p class="lab-message">${this.save.chapter >= 3 ? '港の観測記録：同期済み　次回調査は日没後' : this.save.chapter === 2 ? '潮汐データ：取得中　夕まずめの観測窓を解析しています' : this.save.chapter === 0 ? '昨夜の計算ジョブ：完了　結果ファイルを保存済み' : '次の計算ジョブ：準備中　観測記録を整理しています'}</p>
     </div>`;
     this.query('#home-primary').addEventListener('click', () => {
       sfx('tap');
       if (reportReady) return this.continueChapterOne();
       if (completeReady) return this.finishChapterOne();
+      if (portReportReady) return this.continueChapterTwo();
+      if (chapter2CompleteReady) return this.finishChapterTwo();
       if (needsShopIntro) return this.activateTab('shop');
       this.activateTab(this.save.chapter === 0 ? 'fish' : 'map');
     });
@@ -372,6 +458,10 @@ class FishingApp {
       this.hasFlag('flow-boundary-deduced') ? ['観測仮説','白泡の脇と岩の裏に共通する「流れの境目」を特定した。'] : null,
       this.hasFlag('iwana-challenge-seen') ? ['深みの調査','大型イワナの古傷を記録し、深みへリリースした。'] : null,
       this.hasFlag('chapter1-complete') ? ['第一章完了','古い観測帳から、十五年前の銀色魚の記録を発見。'] : null,
+      this.hasFlag('port-arrival-seen') ? ['第二章','月波港で磯部蓮と出会い、潮目へルアーを通す方法を教わった。'] : null,
+      this.hasFlag('port-mid-report-seen') ? ['潮汐仮説','下げ潮の河口に小魚と大型魚が集まる条件を特定した。'] : null,
+      this.hasFlag('tournament-suzuki-seen') ? ['夕まずめ大会','大型スズキを記録し、傷が移動経路を示す可能性を確かめた。'] : null,
+      this.hasFlag('chapter2-complete') ? ['第二章完了','日没後に旧水路を通る銀色魚の影を、次の調査対象に定めた。'] : null,
     ].filter((item): item is string[] => Boolean(item));
     this.query('#dock').innerHTML = `<div class="memo-head"><button id="memo-back" class="tiny-button">← ホーム</button><div><small>FIELD JOURNAL</small><h2>観測メモ</h2></div></div><div class="memo-stats"><div><b>${this.save.totalCaught}</b><span>総捕獲</span></div><div><b>${logs.length}</b><span>観測魚種</span></div><div><b>${giantKinds}</b><span>巨大魚種</span></div></div><section class="memo-section"><h3>調査のあゆみ</h3>${milestones.length ? milestones.map((item,index) => `<article class="milestone"><i>${String(index+1).padStart(2,'0')}</i><div><b>${item[0]}</b><p>${item[1]}</p></div></article>`).join('') : '<p class="empty-log">まだ記録はない。川へ出て最初の一匹を観測しよう。</p>'}</section><section class="memo-section catch-log"><h3>初観測ログ</h3>${logs.map(({fish,record}) => `<article><time>${new Date(record!.firstCaughtAt).toLocaleDateString('ja-JP',{month:'numeric',day:'numeric'})}</time><img src="${fish.sprite}" alt=""><div><b>${fish.name}</b><small>${STAGES[record!.firstStage].name}｜最大 ${record!.maxSize.toFixed(1)}cm｜${record!.count}匹</small></div></article>`).join('') || '<p class="empty-log">未記録</p>'}</section>`;
     this.query('#memo-back').addEventListener('click', () => this.activateTab('home'));
@@ -401,7 +491,16 @@ class FishingApp {
   }
 
   private currentQuest(): { title: string; description: string; progress: number; counter: string } {
-    if (this.save.chapter >= 2) return { title:'第一章の観測完了', description:'観測帳には河口での目撃記録が残っている。夕暮れの港が、次の調査候補だ。', progress:100, counter:'次の調査：夕暮れの港' };
+    if (this.save.chapter >= 3) return { title:'第二章の観測完了', description:'日没後に旧水路が開く夜、銀色の影が動く。次の章では夜の川を調査する。', progress:100, counter:'次章：夜の川は眠らない' };
+    if (this.save.chapter === 2) {
+      if (!this.hasFlag('port-arrival-seen')) return { title:'月波港へ向かう', description:'古い観測帳に残る河口の目撃場所を、移動画面から訪ねよう。', progress:10, counter:'目的地：月波港' };
+      const portSpecies = FISH_LIST.filter((fish) => fish.habitat.includes('tsukinami-port') && this.save.records[fish.id]).length;
+      const portCount = this.save.stageCatchCounts['tsukinami-port'] ?? 0;
+      if (!portSurveyReady(this.save)) return { title:'港の「当たり前」を観測', description:'足元のハゼと中層のアジを含む、合計3匹・2魚種を記録しよう。', progress:25 + Math.min(38, Math.min(portCount/3, portSpecies/2)*38), counter:`${portCount}/3匹・${portSpecies}/2種` };
+      if (!this.hasFlag('port-mid-report-seen')) return { title:'潮汐データを整理する', description:'研究室へ戻り、釣れた時刻と潮の向きを森野先輩と照らし合わせよう。', progress:68, counter:'報告可能' };
+      if (!this.hasFlag('tournament-suzuki-seen')) return { title:'夕まずめ大会で大型魚を狙う', description:'河口の潮目へルアーを遠投し、三回うまく引いてスズキを釣り上げよう。', progress:88, counter:'大会目標 0/1' };
+      return { title:'研究室へ戻って最終報告', description:'港の大型魚に残る傷と、日没後の監視記録を照らし合わせよう。', progress:98, counter:'帰還可能' };
+    }
     if (this.save.chapter === 0) {
       const species = Object.keys(this.save.records).length;
       return { title:'大学裏の生態を調べる', description:'合計3匹、2魚種を観測して先輩へ報告しよう。', progress:Math.min(100, Math.min(this.save.totalCaught/3, species/2)*100), counter:`${this.save.totalCaught}/3匹・${species}/2種` };
@@ -455,8 +554,45 @@ class FishingApp {
     });
   }
 
+  private continueChapterTwo(): void {
+    this.playStory('portMidReport', () => {
+      this.showTideBoard(() => {
+        this.addFlag('port-mid-report-seen');
+        this.addFlag('outflow-tide-deduced');
+        persistSave(this.save);
+        this.playStory('tournamentStart', () => {
+          this.addFlag('tournament-open');
+          persistSave(this.save);
+          this.activateTab('home');
+          this.toast('夕まずめ大会 開始｜河口の潮目をルアーで狙おう');
+        });
+      });
+    });
+  }
+
+  private showTideBoard(onComplete: () => void): void {
+    const overlay = this.query('#overlay');
+    overlay.innerHTML = `<div class="hypothesis-dimmer"><section class="hypothesis-board tide-board"><header><small>TIDAL REVIEW</small><h2>大型魚が港へ入る条件は？</h2><p>釣果時刻と流れの向きを照らし合わせよう。</p></header><div class="evidence-row"><span>日没前</span><i>＋</i><span>下げ潮</span><i>＋</i><span>河口の小魚</span></div><div class="hypothesis-options"><button data-tide="high">満潮で水が止まる時</button><button data-tide="outflow">川水が海へ押し出す時</button><button data-tide="random">潮とは関係なくランダム</button></div><p id="tide-result" class="hypothesis-result">三つの記録が重なる条件を選ぼう。</p><button id="tide-confirm" class="primary hidden">この条件で大会に挑む</button></section></div>`;
+    const result = overlay.querySelector<HTMLElement>('#tide-result')!;
+    const confirm = overlay.querySelector<HTMLButtonElement>('#tide-confirm')!;
+    overlay.querySelectorAll<HTMLButtonElement>('[data-tide]').forEach((button) => button.addEventListener('click', () => {
+      sfx('tap');
+      if (button.dataset.tide !== 'outflow') {
+        button.classList.add('wrong');
+        result.innerHTML = '<b>森野先輩</b>「魚がいた時刻だけでなく、水がどちらへ動いたかも見よう」';
+        return;
+      }
+      overlay.querySelectorAll<HTMLButtonElement>('[data-tide]').forEach((item) => { item.disabled = true; });
+      button.classList.add('correct');
+      result.innerHTML = '<b>仮説成立</b>下げ潮で川水が押し出すと潮目が強まり、小魚と大型魚が同じ線へ集まる。';
+      confirm.classList.remove('hidden');
+    }));
+    confirm.addEventListener('click', () => { sfx('tap'); overlay.innerHTML = ''; onComplete(); });
+  }
+
   private hasFlag(flag: string): boolean { return this.save.storyFlags.includes(flag); }
   private addFlag(flag: string): void { if (!this.hasFlag(flag)) this.save.storyFlags.push(flag); }
+  private currentPortTide(): PortTide { return this.hasFlag('tournament-open') ? 'outflow' : 'slack'; }
 
   private renderFishing(): void {
     const dock = this.query('#dock');
@@ -469,18 +605,29 @@ class FishingApp {
     const floatBonus = Math.round(equipped.float.control * 900);
     const hookBonus = Math.round(equipped.hook.control * 900);
     const deepPoolUnlocked = this.hasFlag('deep-pool-clue-seen');
-    if (this.save.activeStage !== 'mountain-stream') this.fishingSpot = 'rapid';
+    const port = this.save.activeStage === 'tsukinami-port';
+    if (this.save.activeStage === 'campus-river') this.fishingSpot = 'rapid';
+    if (this.save.activeStage === 'mountain-stream' && !['edge','rapid','deep-pool'].includes(this.fishingSpot)) this.fishingSpot = 'rapid';
+    if (port && !['harbor-wall','breakwater','river-mouth'].includes(this.fishingSpot)) this.fishingSpot = 'harbor-wall';
     if (this.fishingSpot === 'deep-pool' && !deepPoolUnlocked) this.fishingSpot = 'rapid';
     this.scene?.setDeepPool(this.fishingSpot === 'deep-pool');
-    const spotRow = this.save.activeStage === 'mountain-stream' ? `<div class="spot-row"><span>地点</span><button data-spot="edge" class="${this.fishingSpot === 'edge' ? 'selected' : ''}">岸際の淀み</button><button data-spot="rapid" class="${this.fishingSpot === 'rapid' ? 'selected' : ''}">白泡の瀬</button><button data-spot="deep-pool" class="${this.fishingSpot === 'deep-pool' ? 'selected' : ''}" ${deepPoolUnlocked ? '' : 'disabled'}>${deepPoolUnlocked ? '深い落ち込み' : '未調査'}</button></div>` : '';
+    const spotRow = this.save.activeStage === 'mountain-stream'
+      ? `<div class="spot-row"><span>地点</span><button data-spot="edge" class="${this.fishingSpot === 'edge' ? 'selected' : ''}">岸際の淀み</button><button data-spot="rapid" class="${this.fishingSpot === 'rapid' ? 'selected' : ''}">白泡の瀬</button><button data-spot="deep-pool" class="${this.fishingSpot === 'deep-pool' ? 'selected' : ''}" ${deepPoolUnlocked ? '' : 'disabled'}>${deepPoolUnlocked ? '深い落ち込み' : '未調査'}</button></div>`
+      : port
+        ? `<div class="spot-row port-spots"><span>地点</span><button data-spot="harbor-wall" class="${this.fishingSpot === 'harbor-wall' ? 'selected' : ''}">港の足元</button><button data-spot="breakwater" class="${this.fishingSpot === 'breakwater' ? 'selected' : ''}">防波堤</button><button data-spot="river-mouth" class="${this.fishingSpot === 'river-mouth' ? 'selected' : ''}">河口の潮目</button></div>`
+        : '';
+    const tide = this.currentPortTide();
+    const tideStrip = port ? `<div class="tide-strip ${tide}"><span>潮</span><b>${tide === 'outflow' ? '下げ潮・川水が押す' : '夕凪・流れは緩い'}</b><i>${this.hasFlag('tournament-open') ? '大会中' : '基礎観測'}</i></div>` : '';
     dock.innerHTML = `
       <div class="location-row"><div><small>現在地</small><strong>${stage.name}</strong></div><p>${stage.description}</p></div>
       ${spotRow}
+      ${tideStrip}
       <div class="bait-row"><span>エサ</span>${baits.map((bait) => `<button data-bait="${bait}" class="chip ${bait === this.save.bait ? 'selected' : ''}">${bait}</button>`).join('')}</div>
       <div class="tackle-strip"><span><i>竿</i>${equipped.rod.name}<small>${rodEffect ? `張力 -${rodEffect}%` : '標準'}</small></span><span><i>浮</i>${equipped.float.name}<small>${floatBonus ? `合わせ +${floatBonus}ms` : '標準'}</small></span><span><i>針</i>${equipped.hook.name}<small>${hookBonus ? `+${hookBonus}ms・疲労UP` : '標準'}</small></span></div>
       <div class="cast-panel" id="cast-panel">
         <div class="phase-copy"><small id="phase-label">CAST</small><strong id="phase-title">狙う距離を決めよう</strong><p id="phase-help">ボタンでメーターを動かし、もう一度押してキャスト</p></div>
         <div class="cast-meter" id="cast-meter"><i style="left:${this.castPower*100}%"></i></div>
+        <div id="lure-hud" class="lure-hud hidden"><div class="lure-copy"><span>潮目へ通す</span><b id="lure-count">誘い 0 / 3</b></div><div class="lure-meter"><span id="lure-zone"></span><i id="lure-marker"></i></div><p id="lure-feedback">白い印が金色に入った瞬間に引く</p></div>
         <div id="fight-hud" class="fight-hud hidden"><label>糸のテンション <b id="tension-text">安定</b></label><div class="gauge tension"><i id="tension-bar"></i><em></em></div><label>魚との距離 <b id="distance-text">70m</b></label><div class="gauge distance"><i id="distance-bar"></i></div><div id="fish-tell" class="fish-tell">魚の動きを見よう</div></div>
         <div id="landing-hud" class="landing-hud hidden" role="button" tabindex="0" aria-label="タイミングを合わせて魚を引き上げる"><div class="landing-copy"><small>CLICK / TAP <i id="landing-difficulty-label"></i></small><b>魚体が中央に来た瞬間を狙え</b><p>白い印が金色に重なったら、ゲージをクリックして引き上げる</p></div><div class="landing-gauge"><span id="landing-zone"></span><i id="landing-marker"></i><em>水面</em><em>足元</em></div></div>
         <button id="action" class="primary action-button">キャストを始める <kbd>Space</kbd></button>
@@ -508,6 +655,7 @@ class FishingApp {
   private action(): void {
     if (this.phase === 'idle') return this.beginCast();
     if (this.phase === 'casting') return this.landCast();
+    if (this.phase === 'luring') return this.attemptLurePull();
     if (this.phase === 'bite') return this.hookFish();
     if (this.phase === 'landing') return this.attemptLanding();
     if (this.phase === 'waiting' || this.phase === 'nibble') return this.failFishing('早すぎた！　これは前アタリだ');
@@ -541,24 +689,79 @@ class FishingApp {
     this.phase = 'waiting';
     const deepPoolChallenge = this.save.chapter === 1 && this.save.activeStage === 'mountain-stream' && this.hasFlag('deep-pool-clue-seen') && !this.hasFlag('iwana-challenge-seen');
     const deepPoolTarget = deepPoolChallenge && this.fishingSpot === 'deep-pool' && this.save.bait === '川虫' && this.castPower >= .58;
-    const habitatCast = this.save.activeStage !== 'mountain-stream'
-      ? this.castPower
-      : this.fishingSpot === 'edge'
+    const tournamentTarget = this.save.chapter === 2 && this.save.activeStage === 'tsukinami-port' && this.hasFlag('tournament-open') && !this.hasFlag('tournament-suzuki-seen') && this.fishingSpot === 'river-mouth' && this.save.bait === 'ルアー' && this.castPower >= .62;
+    const habitatCast = this.save.activeStage === 'tsukinami-port'
+      ? this.fishingSpot === 'harbor-wall' ? this.castPower * .38 : this.fishingSpot === 'breakwater' ? .25 + this.castPower * .55 : .58 + this.castPower * .42
+      : this.save.activeStage !== 'mountain-stream'
+        ? this.castPower
+        : this.fishingSpot === 'edge'
         ? this.castPower * .42
         : this.fishingSpot === 'deep-pool'
           ? .55 + this.castPower * .45
           : .22 + this.castPower * .58;
-    this.pendingFish = deepPoolTarget ? FISH.iwana : chooseFish(this.save.activeStage, this.save.bait, habitatCast);
-    this.pendingCatch = deepPoolTarget ? makeCatch(this.pendingFish, () => .78, this.castPower) : makeCatch(this.pendingFish, Math.random, this.castPower);
+    this.pendingFish = tournamentTarget ? FISH.suzuki : deepPoolTarget ? FISH.iwana : chooseFish(this.save.activeStage, this.save.bait, habitatCast);
+    this.pendingCatch = tournamentTarget ? makeCatch(this.pendingFish, () => .84, this.castPower) : deepPoolTarget ? makeCatch(this.pendingFish, () => .78, this.castPower) : makeCatch(this.pendingFish, Math.random, this.castPower);
     this.pendingPower = specimenPower(this.pendingFish, this.pendingCatch.size);
     this.scene?.setMood('waiting', this.castPower);
     sfx('cast');
     this.setCopy('WAIT','浮きをよく見よう','小さな揺れは前アタリ。深く沈んだ瞬間に合わせる');
     this.setAction('アタリを待つ…');
     this.query<HTMLButtonElement>('#action').classList.add('waiting');
+    if (this.save.activeStage === 'tsukinami-port' && this.save.bait === 'ルアー') return this.beginLureRetrieve();
     const lead = 900 + Math.random() * 900;
     this.timers.push(window.setTimeout(() => this.showNibble(), lead));
     this.timers.push(window.setTimeout(() => this.showBite(), lead + 950 + Math.random() * 750));
+  }
+
+  private beginLureRetrieve(): void {
+    this.phase = 'luring';
+    this.lurePosition = .08;
+    this.lureDirection = 1;
+    this.lureHits = 0;
+    this.lureLastFrame = performance.now();
+    this.query('#cast-meter').classList.add('hidden');
+    this.query('#lure-hud').classList.remove('hidden');
+    const zone = lureWindow(this.currentPortTide());
+    const zoneElement = this.query('#lure-zone');
+    zoneElement.style.left = `${zone.start * 100}%`;
+    zoneElement.style.width = `${(zone.end-zone.start) * 100}%`;
+    this.setCopy('LURE','潮目へルアーを通す','金色の流れへ入った瞬間に、三回ルアーを引こう');
+    this.setAction('ルアーを引く！');
+    this.query<HTMLButtonElement>('#action').classList.remove('waiting');
+    this.lureFrame = requestAnimationFrame((time) => this.updateLureRetrieve(time));
+  }
+
+  private updateLureRetrieve(time: number): void {
+    if (this.phase !== 'luring') return;
+    const dt = Math.min((time - this.lureLastFrame) / 1000, .05);
+    this.lureLastFrame = time;
+    const state = stepLureMarker({ position:this.lurePosition, direction:this.lureDirection }, dt, this.currentPortTide());
+    this.lurePosition = state.position;
+    this.lureDirection = state.direction;
+    const marker = this.root.querySelector<HTMLElement>('#lure-marker');
+    if (marker) marker.style.left = `${this.lurePosition * 100}%`;
+    this.lureFrame = requestAnimationFrame((next) => this.updateLureRetrieve(next));
+  }
+
+  private attemptLurePull(): void {
+    const feedback = this.query('#lure-feedback');
+    if (!isLurePullOnCurrent(this.lurePosition, this.currentPortTide())) {
+      this.lureHits = Math.max(0, this.lureHits - 1);
+      feedback.textContent = '潮目を外れた。白い印が金色に入るまで待とう';
+      feedback.className = 'miss';
+      sfx('fail');
+    } else {
+      this.lureHits++;
+      feedback.textContent = this.lureHits >= 3 ? '水中で重い影が反転した！' : '流れを捉えた。もう一度、間を合わせる';
+      feedback.className = 'hit';
+      sfx('tap');
+    }
+    this.query('#lure-count').textContent = `誘い ${this.lureHits} / 3`;
+    if (this.lureHits < 3) return;
+    cancelAnimationFrame(this.lureFrame);
+    this.phase = 'waiting';
+    this.setAction('食いつきを待つ…');
+    this.timers.push(window.setTimeout(() => this.showBite(), 420));
   }
 
   private showNibble(): void {
@@ -589,6 +792,7 @@ class FishingApp {
     this.fightState = createFightState(this.pendingFish, this.castPower, this.pendingPower);
     this.lastFrame = performance.now();
     this.query('#cast-meter').classList.add('hidden');
+    this.query('#lure-hud').classList.add('hidden');
     this.query('#fight-hud').classList.remove('hidden');
     const dock = this.query('#dock');
     dock.classList.add('fight-mode');
@@ -682,6 +886,7 @@ class FishingApp {
     if (!this.pendingFish) return;
     cancelAnimationFrame(this.fightFrame);
     cancelAnimationFrame(this.landingFrame);
+    cancelAnimationFrame(this.lureFrame);
     this.scene?.setMood('splash', this.castPower);
     const fish = this.pendingFish;
     const item = this.pendingCatch ?? makeCatch(fish, Math.random, this.castPower);
@@ -689,6 +894,8 @@ class FishingApp {
     const firstCatchEvent = this.save.totalCaught === 0 && !this.hasFlag('first-catch-seen');
     const firstYamameEvent = fish.id === 'yamame' && this.save.activeStage === 'mountain-stream' && !this.hasFlag('yamame-story-seen');
     const iwanaChallengeEvent = fish.id === 'iwana' && this.fishingSpot === 'deep-pool' && item.size >= fish.thresholds[1] && this.hasFlag('deep-pool-clue-seen') && !this.hasFlag('iwana-challenge-seen');
+    const firstPortCatchEvent = this.save.activeStage === 'tsukinami-port' && !this.hasFlag('first-port-catch-seen');
+    const tournamentSuzukiEvent = fish.id === 'suzuki' && this.save.activeStage === 'tsukinami-port' && this.hasFlag('tournament-open') && !this.hasFlag('tournament-suzuki-seen') && item.size >= fish.thresholds[1];
     const result = recordCatch(this.save, item, this.save.activeStage);
     if (iwanaChallengeEvent) releaseCatch(this.save, item.uid);
     persistSave(this.save);
@@ -697,8 +904,12 @@ class FishingApp {
     const tags = [result.isNew ? 'NEW!' : '', result.isRecord ? '自己新記録' : '', item.rank === '巨大' ? 'GIANT' : ''].filter(Boolean);
     const overlay = this.query('#overlay');
     const disposition = iwanaChallengeEvent ? `${item.weight.toFixed(1)} g　／　深みの主・要リリース` : `${item.weight.toFixed(1)} g　／　売値 ${item.value} G`;
-    overlay.innerHTML = `<div class="catch-dimmer"><section class="catch-card ${item.rank === '巨大' ? 'giant' : ''}"><div class="catch-rays"></div><p class="catch-label">${tags.map((tag) => `<span>${tag}</span>`).join('')}</p><div class="catch-fish-stage"><img src="${fish.sprite}" alt="${fish.name}"></div><small>${'★'.repeat(fish.rarity)}${'☆'.repeat(4-fish.rarity)}</small><h2>${fish.name}</h2><div class="catch-size"><strong>${item.size.toFixed(1)}</strong> cm <i>${item.rank}サイズ</i></div><p>${disposition}</p><button class="primary">${iwanaChallengeEvent ? '傷を記録する' : '記録して持ち帰る'}</button></section></div>`;
-    overlay.querySelector('button')?.addEventListener('click', () => {
+    const waterLabel = aquariumKindForFish(fish.id) === 'freshwater' ? '淡水槽' : '汽水・海水槽';
+    const catchActions = iwanaChallengeEvent
+      ? `<button id="catch-keep" class="primary">傷を記録する</button>`
+      : `<div class="catch-actions"><button id="catch-aquarium" class="catch-secondary">${waterLabel}へ入れる</button><button id="catch-keep" class="primary">記録して持ち帰る</button></div>`;
+    overlay.innerHTML = `<div class="catch-dimmer"><section class="catch-card ${item.rank === '巨大' ? 'giant' : ''}"><div class="catch-rays"></div><p class="catch-label">${tags.map((tag) => `<span>${tag}</span>`).join('')}</p><div class="catch-fish-stage"><img src="${fish.sprite}" alt="${fish.name}"></div><small>${'★'.repeat(fish.rarity)}${'☆'.repeat(4-fish.rarity)}</small><h2>${fish.name}</h2><div class="catch-size"><strong>${item.size.toFixed(1)}</strong> cm <i>${item.rank}サイズ</i></div><p>${disposition}</p>${catchActions}</section></div>`;
+    const finishCatch = (tankMessage?: string) => {
       overlay.innerHTML = '';
       const chapterStarted = previousChapter === 0 && this.save.chapter === 1;
       this.resetFishing();
@@ -737,9 +948,36 @@ class FishingApp {
             this.toast('イワナを深みに戻した。研究室で最終報告をまとめよう');
           });
         });
+      } else if (tournamentSuzukiEvent) {
+        this.addFlag('tournament-suzuki-seen');
+        persistSave(this.save);
+        this.playStory('tournamentSuzukiCaught', () => {
+          this.renderFishing();
+          this.toast('大会目標達成！ 研究室で港の記録をまとめよう');
+        });
+      } else if (firstPortCatchEvent) {
+        this.addFlag('first-port-catch-seen');
+        persistSave(this.save);
+        this.playStory('firstPortCatch', () => {
+          this.renderFishing();
+          this.toast(portSurveyReady(this.save) ? '港の基礎観測完了。研究室へ戻ろう' : 'ハゼとアジ、両方の動きを比べよう');
+        });
       } else if (this.save.chapter === 1 && streamSurveyReady(this.save)) {
         this.toast(this.hasFlag('stream-mid-report-seen') ? '深みの大型イワナを狙おう' : '基礎調査完了！ ホームへ戻ろう');
+      } else if (this.save.chapter === 2 && portSurveyReady(this.save)) {
+        this.toast(this.hasFlag('port-mid-report-seen') ? '河口の潮目へルアーを通そう' : '港の基礎観測完了！ ホームへ戻ろう');
+      } else if (tankMessage) {
+        this.toast(tankMessage);
       }
+    };
+    overlay.querySelector('#catch-keep')?.addEventListener('click', () => finishCatch());
+    overlay.querySelector('#catch-aquarium')?.addEventListener('click', () => {
+      const moved = moveCatchToAquarium(this.save, item.uid, this.save.activeStage);
+      if (moved === 'full') return this.toast(`${waterLabel}は満員です。ホームの水槽から魚を出せます`);
+      if (moved === 'missing') return this.toast('この個体の記録を確認できませんでした');
+      persistSave(this.save);
+      sfx('buy');
+      finishCatch(`${fish.name}を${waterLabel}へ迎えた`);
     });
   }
 
@@ -776,6 +1014,29 @@ class FishingApp {
     });
   }
 
+  private finishChapterTwo(): void {
+    this.playStory('chapter2Finale', () => {
+      this.save.chapter = 3;
+      this.addFlag('chapter2-complete');
+      const gear = GEAR.find((item) => item.id === 'rod-2')!;
+      const previousGear = this.save.equipped.rod;
+      let rewardSource = 'TOURNAMENT REWARD｜月波港 夕まずめ大会';
+      if (!this.save.ownedGear.includes('rod-2')) {
+        this.save.ownedGear.push('rod-2');
+        this.save.equipped.rod = 'rod-2';
+      } else {
+        this.save.money += 650;
+        rewardSource = 'TOURNAMENT REWARD｜所持済み・優勝賞金 650 G';
+      }
+      persistSave(this.save);
+      this.updateMoney();
+      this.showGearReward(gear, previousGear, rewardSource, () => {
+        this.activateTab('home');
+        this.toast('第二章クリア｜夜の川につながる記録を保存した');
+      });
+    });
+  }
+
   private gearEffect(gear: GearData): string {
     if (gear.level === 1) return '基本性能。操作の癖をそのまま感じられる。';
     if (gear.category === 'rod') return `テンション上昇を約${Math.round(gear.control * 105)}%抑える`;
@@ -806,6 +1067,7 @@ class FishingApp {
   private failFishing(message: string): void {
     cancelAnimationFrame(this.fightFrame);
     cancelAnimationFrame(this.landingFrame);
+    cancelAnimationFrame(this.lureFrame);
     this.clearTimers();
     sfx('fail');
     this.scene?.setMood('idle');
@@ -821,6 +1083,7 @@ class FishingApp {
   private resetFishing(): void {
     cancelAnimationFrame(this.fightFrame);
     cancelAnimationFrame(this.landingFrame);
+    cancelAnimationFrame(this.lureFrame);
     this.clearTimers();
     this.scene?.setMood('idle');
     this.phase = 'idle';
@@ -851,10 +1114,11 @@ class FishingApp {
 
   private renderShop(): void {
     const basketValue = this.save.basket.reduce((sum, item) => sum + item.value, 0);
-    const visibleGear = GEAR.filter((gear) => gear.id !== 'float-2' || this.save.ownedGear.includes(gear.id) || this.save.chapter >= 2);
+    const storyRewards = new Set(['float-2','rod-2']);
+    const visibleGear = GEAR.filter((gear) => !storyRewards.has(gear.id) || this.save.ownedGear.includes(gear.id) || this.save.chapter >= gear.unlockChapter);
     this.query('#dock').innerHTML = `<div class="shop-head"><div class="shopkeeper"><span>釣</span></div><div><small>月波釣具店　店主・鵜沢</small><p>「道具は腕を助ける。でも、魚を見るのは君だよ」</p></div><strong id="money" class="shop-wallet">${this.save.money.toLocaleString()} G</strong></div>
       <button id="sell" class="sell-button" ${this.save.basket.length ? '' : 'disabled'}><span>釣果をまとめて売る <small>${this.save.basket.length}匹</small></span><strong>+ ${basketValue} G</strong></button>
-      <div class="gear-grid">${(['rod','float','hook'] as GearCategory[]).map((category) => `<section><h3>${CATEGORY_NAMES[category]}</h3>${visibleGear.filter((gear) => gear.category === category).map((gear) => { const owned = this.save.ownedGear.includes(gear.id); const equipped = this.save.equipped[category] === gear.id; const locked = this.save.chapter < gear.unlockChapter; const unlockLabel = gear.unlockChapter === 1 ? '第一章' : '第四章'; const art = gear.asset ? `<img src="${gear.asset}" alt="">` : '<span>?</span>'; return `<button data-gear="${gear.id}" class="gear ${equipped?'equipped':''}" ${locked?'disabled':''}><div class="gear-icon">${art}<i>Lv.${gear.level}</i></div><span><b>${gear.name}</b><small>${gear.description}</small></span><em>${locked?unlockLabel:equipped?'装備中':owned?'装備する':`${gear.price} G`}</em></button>`; }).join('')}</section>`).join('')}</div>`;
+      <div class="gear-grid">${(['rod','float','hook'] as GearCategory[]).map((category) => `<section><h3>${CATEGORY_NAMES[category]}</h3>${visibleGear.filter((gear) => gear.category === category).map((gear) => { const owned = this.save.ownedGear.includes(gear.id); const equipped = this.save.equipped[category] === gear.id; const locked = this.save.chapter < gear.unlockChapter; const unlockLabel = ['序章','第一章','第二章','第二章報酬','第四章'][gear.unlockChapter] ?? `第${gear.unlockChapter}章`; const art = gear.asset ? `<img src="${gear.asset}" alt="">` : '<span>?</span>'; return `<button data-gear="${gear.id}" class="gear ${equipped?'equipped':''}" ${locked?'disabled':''}><div class="gear-icon">${art}<i>Lv.${gear.level}</i></div><span><b>${gear.name}</b><small>${gear.description}</small></span><em>${locked?unlockLabel:equipped?'装備中':owned?'装備する':`${gear.price} G`}</em></button>`; }).join('')}</section>`).join('')}</div>`;
     this.root.querySelector('#sell')?.addEventListener('click', () => { const earned = sellBasket(this.save); persistSave(this.save); this.updateMoney(); sfx('buy'); this.toast(`${earned} G で買い取ってもらった`); this.renderShop(); });
     this.query('#dock').querySelectorAll<HTMLButtonElement>('[data-gear]').forEach((button) => button.addEventListener('click', () => {
       const gear = GEAR.find((item) => item.id === button.dataset.gear);
@@ -881,7 +1145,7 @@ class FishingApp {
   }
 
   private renderMap(): void {
-    this.query('#dock').innerHTML = `<div class="section-heading"><div><small>FIELD ROUTE</small><h2>調査ルートを選ぶ</h2></div><button id="settings" class="tiny-button">設定</button></div><p class="map-guide">地図のピン、または下の目的地を選択すると移動します。</p><div class="map-route"><div class="route-line"></div>${Object.values(STAGES).map((stage, index) => { const open = this.save.unlockedStages.includes(stage.id); const active = stage.id === this.save.activeStage; const route = stage.id === 'campus-river' ? '研究室 → 徒歩3分' : '大学前 → バス → 山道'; return `<button data-stage="${stage.id}" class="stage-card ${active?'active':''} ${open?'':'locked'}" ${open?'':'disabled'}><i>${index+1}</i><span><small>${route}</small><b>${open?stage.name:'未調査の上流'}</b><em>${active?'現在地':open?'このルートで移動':'調査条件が必要'}</em></span></button>`; }).join('')}</div>`;
+    this.query('#dock').innerHTML = `<div class="section-heading"><div><small>FIELD ROUTE</small><h2>調査ルートを選ぶ</h2></div><button id="settings" class="tiny-button">設定</button></div><p class="map-guide">地図のピン、または下の目的地を選択すると移動します。</p><div class="map-route"><div class="route-line"></div>${Object.values(STAGES).map((stage, index) => { const open = this.save.unlockedStages.includes(stage.id); const active = stage.id === this.save.activeStage; const route = stage.id === 'campus-river' ? '研究室 → 徒歩3分' : stage.id === 'mountain-stream' ? '大学前 → バス → 山道' : '大学前 → 海岸線バス → 河口'; const unknown = stage.id === 'tsukinami-port' ? '未調査の河口' : '未調査の上流'; return `<button data-stage="${stage.id}" class="stage-card ${active?'active':''} ${open?'':'locked'}" ${open?'':'disabled'}><i>${index+1}</i><span><small>${route}</small><b>${open?stage.name:unknown}</b><em>${active?'現在地':open?'このルートで移動':'調査条件が必要'}</em></span></button>`; }).join('')}</div>`;
     this.query('#dock').querySelectorAll<HTMLButtonElement>('[data-stage]').forEach((button) => button.addEventListener('click', () => {
       this.travelTo(button.dataset.stage as StageId);
     }));
@@ -891,20 +1155,21 @@ class FishingApp {
   private travelTo(id: StageId): void {
     if (!this.save.unlockedStages.includes(id)) return this.toast('物語を進めると、このルートを調査できます');
     this.save.activeStage = id;
-    this.fishingSpot = 'rapid';
+    this.fishingSpot = id === 'tsukinami-port' ? 'harbor-wall' : 'rapid';
     this.scene?.setStage(id);
     this.scene?.setDeepPool(false);
     sfx('tap');
     const hasArrivalStory = id === 'mountain-stream' && !this.hasFlag('stream-arrival-seen');
     const hasDeepPoolStory = id === 'mountain-stream' && this.hasFlag('deep-pool-open') && !this.hasFlag('deep-pool-clue-seen');
+    const hasPortArrivalStory = id === 'tsukinami-port' && !this.hasFlag('port-arrival-seen');
     persistSave(this.save);
     this.activateTab('fish');
-    if (!hasArrivalStory && !hasDeepPoolStory) this.toast(`${STAGES[id].name}へ移動した`);
+    if (!hasArrivalStory && !hasDeepPoolStory && !hasPortArrivalStory) this.toast(`${STAGES[id].name}へ移動した`);
   }
 
   private showSettings(): void {
     const overlay = this.query('#overlay');
-    overlay.innerHTML = `<section class="settings-card"><h2>設定・セーブ</h2><p>進行は操作のたびにブラウザへ自動保存されます。</p><dl><div><dt>章</dt><dd>${this.save.chapter === 0 ? '序章' : this.save.chapter === 1 ? '第一章' : '第一章クリア'}</dd></div><div><dt>総捕獲</dt><dd>${this.save.totalCaught}匹</dd></div><div><dt>図鑑</dt><dd>${Object.keys(this.save.records).length}/${FISH_LIST.length}種</dd></div></dl><button id="close-settings" class="primary">ゲームへ戻る</button><button id="replay-prologue" class="tiny-button replay-prologue">冒頭「最初の遭遇」を再生</button><button id="erase" class="danger-button">セーブデータを消去</button></section>`;
+    overlay.innerHTML = `<section class="settings-card"><h2>設定・セーブ</h2><p>進行は操作のたびにブラウザへ自動保存されます。</p><dl><div><dt>章</dt><dd>${this.save.chapter === 0 ? '序章' : this.save.chapter === 1 ? '第一章' : this.save.chapter === 2 ? '第二章' : '第二章クリア'}</dd></div><div><dt>総捕獲</dt><dd>${this.save.totalCaught}匹</dd></div><div><dt>図鑑</dt><dd>${Object.keys(this.save.records).length}/${FISH_LIST.length}種</dd></div></dl><button id="close-settings" class="primary">ゲームへ戻る</button><button id="replay-prologue" class="tiny-button replay-prologue">冒頭「最初の遭遇」を再生</button><button id="erase" class="danger-button">セーブデータを消去</button></section>`;
     overlay.querySelector('#close-settings')?.addEventListener('click', () => overlay.innerHTML = '');
     overlay.querySelector('#replay-prologue')?.addEventListener('click', () => this.playFirstEncounter());
     overlay.querySelector('#erase')?.addEventListener('click', () => { if (window.confirm('すべての記録を消去しますか？')) { eraseSave(); location.reload(); } });

@@ -80,6 +80,11 @@ export function streamSurveyReady(save: SaveData): boolean {
   return Boolean(save.records.yamame) && streamSpecies >= 2 && (save.stageCatchCounts['mountain-stream'] ?? 0) >= 3;
 }
 
+export function portSurveyReady(save: SaveData): boolean {
+  const portSpecies = Object.values(FISH).filter((fish) => fish.habitat.includes('tsukinami-port') && save.records[fish.id]).length;
+  return Boolean(save.records.haze && save.records.aji) && portSpecies >= 2 && (save.stageCatchCounts['tsukinami-port'] ?? 0) >= 3;
+}
+
 export function completeTackleShopVisit(save: SaveData): void {
   if (!save.storyFlags.includes('uzawa-intro-seen')) save.storyFlags.push('uzawa-intro-seen');
   if (!save.unlockedStages.includes('mountain-stream')) save.unlockedStages.push('mountain-stream');
