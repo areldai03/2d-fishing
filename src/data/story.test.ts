@@ -3,8 +3,17 @@ import { STORY } from './story';
 
 describe('first chapter story data', () => {
   it('contains a complete prologue-to-finale sequence', () => {
-    expect(Object.keys(STORY)).toEqual(expect.arrayContaining(['opening','chapter1Unlock','streamArrival','yamameCaught','chapter1Finale']));
+    expect(Object.keys(STORY)).toEqual(expect.arrayContaining(['firstEncounter','opening','firstCatch','prologueCatchup','chapter1Unlock','tackleShopIntro','streamArrival','yamameCaught','streamMidReport','deepPoolClue','iwanaChallengeCaught','chapter1Finale']));
+    expect(Object.keys(STORY)).toHaveLength(12);
+    expect(Object.keys(STORY)[0]).toBe('firstEncounter');
+    expect(STORY.firstEncounter.presentation).toBe('cinematic');
+    expect(STORY.firstEncounter.art).toContain('mikazuki-first-encounter');
+    expect(STORY.firstEncounter.lines).toEqual(expect.arrayContaining([
+      expect.objectContaining({ speaker:'謎の人物', portrait:expect.stringContaining('silhouette') }),
+    ]));
     expect(STORY.chapter1Finale.lines.length).toBeGreaterThanOrEqual(8);
+    expect(STORY.iwanaChallengeCaught.lines.some((line) => line.text.includes('戻そう'))).toBe(true);
+    expect(STORY.chapter1Finale.lines.some((line) => line.text.includes('断定できない'))).toBe(true);
     expect(Object.values(STORY).every((scene) => scene.lines.length > 0)).toBe(true);
   });
 

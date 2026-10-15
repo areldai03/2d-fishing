@@ -42,6 +42,7 @@ export interface GearData {
   level: number;
   name: string;
   description: string;
+  asset?: string;
   price: number;
   unlockChapter: number;
   control: number;
@@ -86,12 +87,15 @@ export interface StoryLine {
   speaker: string;
   text: string;
   tone?: 'normal' | 'thought' | 'important';
+  portrait?: string;
 }
 
 export interface StorySceneData {
   id: string;
   title: string;
   backdrop: 'lab' | 'river' | 'stream' | 'night-lab';
+  presentation?: 'novel' | 'cinematic';
+  art?: string;
   archive: {
     unlockFlag: string;
     label: string;

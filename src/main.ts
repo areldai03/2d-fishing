@@ -1,8 +1,9 @@
 import './style.css';
+import './pattern.css';
 import { createGame } from './game/createGame';
 import { RiverScene } from './game/RiverScene';
 import { loadSave, persistSave, eraseSave } from './core/save';
-import { chooseFish, makeCatch, recordCatch, sellBasket, streamSurveyReady } from './core/fishing';
+import { chooseFish, completeTackleShopVisit, makeCatch, recordCatch, releaseCatch, sellBasket, streamSurveyReady } from './core/fishing';
 import { biteWindowMs, canLandFish, createFightState, landingTolerance, specimenPower, stepFight, type FightState } from './core/fight';
 import { buyOrEquip } from './core/shop';
 import { FISH, FISH_LIST } from './data/fish';
@@ -10,9 +11,10 @@ import { GEAR, CATEGORY_NAMES } from './data/equipment';
 import { STAGES } from './data/stages';
 import { STORY } from './data/story';
 import { setBgm, sfx, type BgmTheme } from './audio';
-import type { BaitId, CatchItem, FishData, GearCategory, SaveData, StageId } from './types';
+import type { BaitId, CatchItem, FishData, GearCategory, GearData, SaveData, StageId, StorySceneData } from './types';
 
 type FishingPhase = 'idle' | 'casting' | 'waiting' | 'nibble' | 'bite' | 'fight' | 'landing' | 'landing-result';
+type FishingSpot = 'edge' | 'rapid' | 'deep-pool';
 
 class FishingApp {
   private root: HTMLElement;
@@ -37,6 +39,7 @@ class FishingApp {
   private selectedBook = FISH_LIST[0].id;
   private selectedStoryArchive = 'opening';
   private currentTab = 'home';
+  private fishingSpot: FishingSpot = 'rapid';
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -70,7 +73,7 @@ class FishingApp {
           <section id="home-scene" class="home-scene hidden" aria-label="研究室ホーム">
             <img src="/assets/backgrounds/laboratory-home-pixel-v1.png" alt="夕暮れの研究室">
             <div class="lab-glow"></div><div class="screen-scan"></div><div class="dust d1"></div><div class="dust d2"></div><div class="dust d3"></div>
-            <div class="home-place"><small>HOME BASE</small><strong>第七実験棟・研究室</strong></div>
+            <div class="home-place"><small>HOME BASE</small><strong>東雲大学・第七実験棟</strong></div>
             <button class="lab-hotspot tank" data-lab-spot="tank" aria-label="水槽を調べる"><i></i></button>
             <button class="lab-hotspot window" data-lab-spot="window" aria-label="窓を調べる"><i></i></button>
             <button class="lab-hotspot board" data-lab-spot="board" aria-label="ホワイトボードを調べる"><i></i></button>
@@ -105,7 +108,7 @@ class FishingApp {
       tank:['研究用水槽','ゼブラフィッシュは正式な研究対象。こちらを釣ると、かなり怒られる。'],
       window:['西向きの窓','川まで徒歩3分。研究室から最も再現性の高い脱出経路だ。'],
       board:['先輩のホワイトボード','魚の遊泳経路と研究の仮説が、同じ色のペンで描かれている。'],
-      laptop:['解析用ノートPC','進捗63%。残り時間の推定値は、信頼区間の外にいる。'],
+      laptop:['河川水質予測モデル','水瀬が書いたコードを研究室サーバーで実行中。進捗63%。残り時間の推定値は、信頼区間の外にいる。'],
       tackle:['古い釣具箱','森野先輩の私物。「研究費では買っていない」と三回念を押された。'],
     };
     this.root.querySelectorAll<HTMLButtonElement>('[data-lab-spot]').forEach((button) => button.addEventListener('click', () => {
@@ -121,12 +124,27 @@ class FishingApp {
       <div class="title-call">
         <p class="eyebrow">RETRO FISHING RPG</p>
         <h1>研究中、<br><span>釣り中。</span></h1>
-        <p class="title-copy">解析終了まで、あと<span>2時間。</span><br>川までは、徒歩3分。</p>
+        <p class="title-copy">研究室の計算終了まで、あと<span>2時間。</span><br>川までは、徒歩3分。</p>
       </div>
       <button class="primary start-button">はじめから</button>
       <p class="title-foot">画面タップ / Space キー</p>
     </section>`;
-    overlay.querySelector('.start-button')?.addEventListener('click', () => this.playOpening());
+    overlay.querySelector('.start-button')?.addEventListener('click', () => this.playFirstEncounter());
+  }
+
+  private playFirstEncounter(): void {
+    sfx('tap');
+    this.playStory('firstEncounter', () => {
+      this.addFlag('first-encounter-seen');
+      persistSave(this.save);
+      this.showEncounterIntertitle();
+    });
+  }
+
+  private showEncounterIntertitle(): void {
+    const overlay = this.query('#overlay');
+    overlay.innerHTML = `<section class="encounter-intertitle"><div class="time-rewind-card"><small>NEXT DAY</small><h2>― 翌日の夕方 ―</h2><p>東雲大学・第七実験棟</p></div><button class="encounter-rewind">続ける <span>▼</span></button></section>`;
+    overlay.querySelector('.encounter-rewind')?.addEventListener('click', () => this.playOpening());
   }
 
   private playOpening(): void {
@@ -136,30 +154,31 @@ class FishingApp {
       this.addFlag('opening-seen');
       persistSave(this.save);
       this.activateTab('home');
-      this.toast('序章「実験が終わるまで」');
+      this.toast('序章「昨日の銀色を探して」');
     });
   }
 
   private playStory(sceneId: keyof typeof STORY, onComplete?: () => void): void {
     setBgm('story');
     const scene = STORY[sceneId];
+    if (scene.presentation === 'cinematic') return this.playCinematicStory(scene, onComplete);
     const lines = scene.lines;
     let index = 0;
     const overlay = this.query('#overlay');
+    overlay.innerHTML = `<section class="story-card story-${scene.backdrop} story-${scene.id}"><div class="story-art"><div class="story-chapter">${scene.title}</div><img class="story-character" src="" alt=""><div class="story-gradient"></div></div><div class="dialogue"><span></span><p></p><div class="dialogue-actions"><button class="story-log">LOG</button><button class="story-next">次へ <kbd>Space</kbd></button></div></div><div id="story-backlog" class="story-backlog hidden"></div></section>`;
+    const portraitElement = overlay.querySelector<HTMLImageElement>('.story-character')!;
+    const dialogue = overlay.querySelector<HTMLElement>('.dialogue')!;
+    const speakerElement = dialogue.querySelector<HTMLElement>('span')!;
+    const textElement = dialogue.querySelector<HTMLElement>('p')!;
     const draw = () => {
       const line = lines[index];
-      const portrait = this.storyPortrait(line.speaker);
+      const portrait = line.portrait ?? this.storyPortrait(line.speaker);
       const lengthClass = line.text.length >= 48 ? 'long' : '';
-      overlay.innerHTML = `<section class="story-card story-${scene.backdrop}"><div class="story-art"><div class="story-chapter">${scene.title}</div><img class="story-character" src="${portrait}" alt="${line.speaker}"><div class="story-gradient"></div></div><div class="dialogue ${line.tone ?? ''} ${lengthClass}"><span>${line.speaker}</span><p>${line.text}</p><div class="dialogue-actions"><button class="story-log">LOG</button><button class="story-next">次へ <kbd>Space</kbd></button></div><div class="dots">${lines.map((_, i) => `<i class="${i === index ? 'on' : ''}"></i>`).join('')}</div></div><div id="story-backlog" class="story-backlog hidden"></div></section>`;
-      overlay.querySelector('.story-next')?.addEventListener('click', next);
-      overlay.querySelector('.story-art')?.addEventListener('click', next);
-      overlay.querySelector('.story-log')?.addEventListener('click', () => {
-        const backlog = overlay.querySelector<HTMLElement>('#story-backlog');
-        if (!backlog) return;
-        backlog.classList.remove('hidden');
-        backlog.innerHTML = `<div><small>DIALOGUE LOG</small><h3>${scene.title}</h3>${lines.slice(0,index+1).map((item) => `<p><b>${item.speaker}</b>${item.text}</p>`).join('')}<button>閉じる</button></div>`;
-        backlog.querySelector('button')?.addEventListener('click', () => backlog.classList.add('hidden'));
-      });
+      if (portraitElement.getAttribute('src') !== portrait) portraitElement.src = portrait;
+      portraitElement.alt = this.storySpeakerName(line.speaker);
+      dialogue.className = `dialogue ${line.tone ?? ''} ${lengthClass}`;
+      speakerElement.textContent = this.storySpeakerName(line.speaker);
+      textElement.textContent = line.text;
     };
     const next = () => {
       sfx('tap');
@@ -169,6 +188,48 @@ class FishingApp {
       setBgm(this.bgmForTab(this.currentTab));
       onComplete?.();
     };
+    overlay.querySelector('.story-next')?.addEventListener('click', next);
+    overlay.querySelector('.story-art')?.addEventListener('click', next);
+    overlay.querySelector('.story-log')?.addEventListener('click', () => {
+      const backlog = overlay.querySelector<HTMLElement>('#story-backlog');
+      if (!backlog) return;
+      backlog.classList.remove('hidden');
+      backlog.innerHTML = `<div><small>DIALOGUE LOG</small><h3>${scene.title}</h3>${lines.slice(0,index+1).map((item) => `<p><b>${this.storySpeakerName(item.speaker)}</b>${item.text}</p>`).join('')}<button>閉じる</button></div>`;
+      backlog.querySelector('button')?.addEventListener('click', () => backlog.classList.add('hidden'));
+    });
+    draw();
+  }
+
+  private playCinematicStory(scene: StorySceneData, onComplete?: () => void): void {
+    const lines = scene.lines;
+    let index = 0;
+    const overlay = this.query('#overlay');
+    overlay.innerHTML = `<section class="encounter-cinematic"><div class="encounter-image" role="button" aria-label="次へ"><img src="${scene.art}" alt="夕暮れの川と水中の巨大な銀色魚"><div class="encounter-waterline"></div><i class="encounter-bubble b1"></i><i class="encounter-bubble b2"></i><div class="encounter-scan"></div></div><div class="encounter-silhouette hidden"></div><div class="encounter-scene-label"><small>FIRST CONTACT</small><b>${scene.title}</b></div><div class="encounter-caption"><span></span><p></p><div class="encounter-caption-foot"><button class="story-next">次へ <kbd>Space</kbd></button></div></div></section>`;
+    const cinematic = overlay.querySelector<HTMLElement>('.encounter-cinematic')!;
+    const silhouette = overlay.querySelector<HTMLElement>('.encounter-silhouette')!;
+    const caption = overlay.querySelector<HTMLElement>('.encounter-caption')!;
+    const speakerElement = caption.querySelector<HTMLElement>('span')!;
+    const textElement = caption.querySelector<HTMLElement>('p')!;
+    const draw = () => {
+      const line = lines[index];
+      cinematic.classList.toggle('has-silhouette', Boolean(line.portrait));
+      caption.className = `encounter-caption ${line.tone ?? ''}`;
+      speakerElement.textContent = this.storySpeakerName(line.speaker);
+      textElement.textContent = line.text;
+      silhouette.classList.toggle('hidden', !line.portrait);
+      if (line.portrait) silhouette.innerHTML = `<img src="${line.portrait}" alt="${line.speaker}のシルエット">`;
+    };
+    const next = () => {
+      sfx('tap');
+      index++;
+      if (index < lines.length) return draw();
+      overlay.innerHTML = '';
+      setBgm(this.bgmForTab(this.currentTab));
+      onComplete?.();
+    };
+    overlay.querySelector('.story-next')?.addEventListener('click', next);
+    overlay.querySelector('.encounter-image')?.addEventListener('click', next);
+    silhouette.addEventListener('click', next);
     draw();
   }
 
@@ -176,6 +237,13 @@ class FishingApp {
     if (speaker.includes('森野')) return '/assets/characters/morino-pixel-v1.png';
     if (speaker.includes('鵜沢')) return '/assets/characters/uzawa-pixel-v1.png';
     return '/assets/characters/protagonist-pixel-v1.png';
+  }
+
+  private storySpeakerName(speaker: string): string {
+    if (speaker === '主人公') return '水瀬 朔';
+    if (speaker === '先輩・森野') return '森野 澪';
+    if (speaker === '店主・鵜沢') return '鵜沢 源一';
+    return speaker;
   }
 
   private showLabBubble(title: string, text: string): void {
@@ -198,13 +266,26 @@ class FishingApp {
         this.renderFishing();
         this.toast('主目標：ヤマメを観測する');
       });
+      return;
+    }
+    if (tab === 'fish' && this.save.chapter === 1 && this.save.activeStage === 'mountain-stream' && this.hasFlag('deep-pool-open') && !this.hasFlag('deep-pool-clue-seen')) {
+      this.addFlag('deep-pool-clue-seen');
+      persistSave(this.save);
+      this.playStory('deepPoolClue', () => {
+        this.fishingSpot = 'deep-pool';
+        this.scene?.setDeepPool(true);
+        this.renderFishing();
+        this.toast('新地点「深い落ち込み」｜川虫を遠くへ流そう');
+      });
     }
   }
 
   private renderDock(tab: string): void {
     const home = tab === 'home' || tab === 'memo' || tab === 'story-log';
     const menu = tab === 'book' || tab === 'shop' || tab === 'map';
-    this.query('#dock').classList.toggle('archive-mode', tab === 'story-log');
+    const dock = this.query('#dock');
+    dock.classList.toggle('archive-mode', tab === 'story-log');
+    dock.classList.remove('fight-mode','landing-mode');
     this.query('#home-scene').classList.toggle('hidden', !home);
     this.query('#menu-scene').classList.toggle('hidden', !menu);
     this.query('#game-canvas').classList.toggle('hidden', home || menu);
@@ -248,20 +329,25 @@ class FishingApp {
   private renderHome(): void {
     this.query('#lab-bubble').classList.add('hidden');
     const quest = this.currentQuest();
-    const completeReady = this.save.chapter === 1 && streamSurveyReady(this.save);
+    const reportReady = this.save.chapter === 1 && this.hasFlag('uzawa-intro-seen') && streamSurveyReady(this.save) && !this.hasFlag('stream-mid-report-seen');
+    const completeReady = this.save.chapter === 1 && this.hasFlag('uzawa-intro-seen') && this.hasFlag('iwana-challenge-seen');
+    const actionReady = reportReady || completeReady;
+    const needsShopIntro = this.save.chapter === 1 && !this.hasFlag('uzawa-intro-seen');
     const chapterLabel = this.save.chapter === 0 ? '序章' : this.save.chapter === 1 ? '第一章' : '第一章 完了';
     this.query('#dock').innerHTML = `<div class="home-dock">
-      <div class="home-header"><div><small>${chapterLabel}</small><h2>${this.save.chapter === 0 ? '実験が終わるまで' : '川の上流にて'}</h2></div><span class="clock">18:42</span></div>
-      <article class="quest-card ${completeReady ? 'ready' : ''}"><small>CURRENT OBJECTIVE</small><h3>${quest.title}</h3><p>${quest.description}</p><div class="quest-progress"><i style="width:${quest.progress}%"></i></div><em>${quest.counter}</em></article>
+      <div class="home-header"><div><small>${chapterLabel}</small><h2>${this.save.chapter === 0 ? '昨日の銀色を探して' : '川の上流にて'}</h2></div><span class="clock">18:42</span></div>
+      <article class="quest-card ${actionReady ? 'ready' : ''}"><small>CURRENT OBJECTIVE</small><h3>${quest.title}</h3><p>${quest.description}</p><div class="quest-progress"><i style="width:${quest.progress}%"></i></div><em>${quest.counter}</em></article>
       <div class="home-actions">
-        <button id="home-primary" class="pixel-button">${completeReady ? '研究ノートをまとめる' : this.save.chapter === 0 ? '大学裏の川へ行く' : '釣行を続ける'}<small>${completeReady ? '第一章の物語を進める' : '装備を確認して出発'}</small></button>
-        <div class="home-side-actions"><button id="home-note" class="note-button">観測メモ<span>${Object.keys(this.save.records).length}種 / ${this.save.totalCaught}匹</span></button><button id="home-story-log" class="note-button story-log-button">回想ログ<span>${Object.values(STORY).filter((scene) => this.hasFlag(scene.archive.unlockFlag)).length}件の記録</span></button></div>
+        <button id="home-primary" class="pixel-button">${completeReady ? '最終報告をまとめる' : reportReady ? '中間報告をまとめる' : needsShopIntro ? '月波釣具店へ行く' : this.save.chapter === 0 ? '大学裏の川へ行く' : '釣行を続ける'}<small>${actionReady || needsShopIntro ? '第一章の物語を進める' : '装備を確認して出発'}</small></button>
+        <div class="home-side-actions"><button id="home-note" class="note-button">観測メモ<span>${Object.keys(this.save.records).length}種 / ${this.save.totalCaught}匹</span></button><button id="home-story-log" class="note-button story-log-button">回想ログ<span>出来事を読み返す</span></button></div>
       </div>
-      <p class="lab-message">${this.save.chapter >= 2 ? '解析完了。第一章の観測記録は保存済みです。' : '計算ジョブ：実行中　残り予測 01:18:37'}</p>
+      <p class="lab-message">${this.save.chapter >= 2 ? '解析完了。第一章の観測記録は保存済みです。' : this.save.chapter === 0 ? '昨夜の計算ジョブ：完了　結果ファイルを保存済み' : '次の計算ジョブ：準備中　観測記録を整理しています'}</p>
     </div>`;
     this.query('#home-primary').addEventListener('click', () => {
       sfx('tap');
+      if (reportReady) return this.continueChapterOne();
       if (completeReady) return this.finishChapterOne();
+      if (needsShopIntro) return this.activateTab('shop');
       this.activateTab(this.save.chapter === 0 ? 'fish' : 'map');
     });
     this.query('#home-note').addEventListener('click', () => { sfx('tap'); this.activateTab('memo'); });
@@ -276,9 +362,15 @@ class FishingApp {
       .sort((a,b) => new Date(b.record!.firstCaughtAt).getTime() - new Date(a.record!.firstCaughtAt).getTime());
     const giantKinds = logs.filter((item) => item.record!.ranks.includes('巨大')).length;
     const milestones = [
-      this.hasFlag('opening-seen') ? ['序章','大学裏の川で、三日月形の傷を持つ銀色魚を目撃。'] : null,
-      this.hasFlag('chapter1-unlocked') ? ['第一章','大学裏で3匹・2魚種を観測し、青葉渓流の情報を得た。'] : null,
+      this.hasFlag('first-encounter-seen') ? ['最初の遭遇','大学裏の川で、三日月形の傷を持つ巨大な銀色魚を目撃。'] : null,
+      this.hasFlag('opening-seen') ? ['序章','銀色魚を目撃した翌日、森野先輩へ相談し、比較観測のため古い竿を借りた。'] : null,
+      this.hasFlag('first-catch-seen') ? ['初観測','初めて自分の操作で魚を釣り上げ、場所・エサ・大きさを記録した。'] : null,
+      this.hasFlag('prologue-caught-up') ? ['比較観測','大学裏で三匹を記録し、昨日の銀色魚が通常の魚影とは違うと確かめた。'] : null,
+      this.hasFlag('chapter1-unlocked') ? ['第一章','大学裏の観測を森野先輩へ報告し、月波釣具店を紹介された。'] : null,
+      this.hasFlag('uzawa-intro-seen') ? ['川の共同研究者','鵜沢店主から川虫と青葉渓流への調査ルートを教わった。'] : null,
       this.hasFlag('yamame-story-seen') ? ['観測記録','青葉渓流でヤマメを初観測。流れを利用する逃走を記録。'] : null,
+      this.hasFlag('flow-boundary-deduced') ? ['観測仮説','白泡の脇と岩の裏に共通する「流れの境目」を特定した。'] : null,
+      this.hasFlag('iwana-challenge-seen') ? ['深みの調査','大型イワナの古傷を記録し、深みへリリースした。'] : null,
       this.hasFlag('chapter1-complete') ? ['第一章完了','古い観測帳から、十五年前の銀色魚の記録を発見。'] : null,
     ].filter((item): item is string[] => Boolean(item));
     this.query('#dock').innerHTML = `<div class="memo-head"><button id="memo-back" class="tiny-button">← ホーム</button><div><small>FIELD JOURNAL</small><h2>観測メモ</h2></div></div><div class="memo-stats"><div><b>${this.save.totalCaught}</b><span>総捕獲</span></div><div><b>${logs.length}</b><span>観測魚種</span></div><div><b>${giantKinds}</b><span>巨大魚種</span></div></div><section class="memo-section"><h3>調査のあゆみ</h3>${milestones.length ? milestones.map((item,index) => `<article class="milestone"><i>${String(index+1).padStart(2,'0')}</i><div><b>${item[0]}</b><p>${item[1]}</p></div></article>`).join('') : '<p class="empty-log">まだ記録はない。川へ出て最初の一匹を観測しよう。</p>'}</section><section class="memo-section catch-log"><h3>初観測ログ</h3>${logs.map(({fish,record}) => `<article><time>${new Date(record!.firstCaughtAt).toLocaleDateString('ja-JP',{month:'numeric',day:'numeric'})}</time><img src="${fish.sprite}" alt=""><div><b>${fish.name}</b><small>${STAGES[record!.firstStage].name}｜最大 ${record!.maxSize.toFixed(1)}cm｜${record!.count}匹</small></div></article>`).join('') || '<p class="empty-log">未記録</p>'}</section>`;
@@ -295,7 +387,7 @@ class FishingApp {
     }
     if (!unlocked.some((scene) => scene.id === this.selectedStoryArchive)) this.selectedStoryArchive = unlocked[unlocked.length - 1].id;
     const selected = unlocked.find((scene) => scene.id === this.selectedStoryArchive) ?? unlocked[0];
-    this.query('#dock').innerHTML = `<section class="story-archive"><header class="archive-head"><button id="story-archive-back" class="tiny-button">← ホーム</button><div><small>STORY ARCHIVE</small><h2>回想ログ</h2></div><b>${unlocked.length}<span>SCENES</span></b></header><nav class="archive-scenes" aria-label="回想する場面">${unlocked.map((scene, index) => `<button data-archive-scene="${scene.id}" class="${scene.id === selected.id ? 'active' : ''}"><i>${String(index + 1).padStart(2,'0')}</i><span><small>${scene.archive.label}</small><b>${scene.title.split('｜').at(-1)}</b></span></button>`).join('')}</nav><article class="archive-thread"><div class="archive-thread-head"><div><small>${selected.archive.label}</small><h3>${selected.title}</h3><p>${selected.archive.summary}</p></div><button id="archive-replay">場面を再生 ▶</button></div><div class="archive-messages">${selected.lines.map((line, index) => { const player = line.speaker === '主人公'; return `<div class="archive-message ${player ? 'player' : ''} ${line.tone ?? ''}"><img src="${this.storyPortrait(line.speaker)}" alt="${line.speaker}"><div><b>${line.speaker}</b><p>${line.text}</p><small>LOG ${String(index + 1).padStart(2,'0')}</small></div></div>`; }).join('')}</div></article></section>`;
+    this.query('#dock').innerHTML = `<section class="story-archive"><header class="archive-head"><button id="story-archive-back" class="tiny-button">← ホーム</button><div><small>STORY ARCHIVE</small><h2>回想ログ</h2></div></header><nav class="archive-scenes" aria-label="回想する場面">${unlocked.map((scene) => `<button data-archive-scene="${scene.id}" class="${scene.id === selected.id ? 'active' : ''}"><span><small>${scene.archive.label}</small><b>${scene.title.split('｜').at(-1)}</b></span></button>`).join('')}</nav><article class="archive-thread"><div class="archive-thread-head"><div><small>${selected.archive.label}</small><h3>${selected.title}</h3><p>${selected.archive.summary}</p></div><button id="archive-replay">場面を再生 ▶</button></div><div class="archive-messages">${selected.lines.map((line) => { const player = line.speaker === '主人公'; const speaker = this.storySpeakerName(line.speaker); return `<div class="archive-message ${player ? 'player' : ''} ${line.tone ?? ''}"><img src="${line.portrait ?? this.storyPortrait(line.speaker)}" alt="${speaker}"><div><b>${speaker}</b><p>${line.text}</p></div></div>`; }).join('')}</div></article></section>`;
     this.query('#story-archive-back').addEventListener('click', () => this.activateTab('home'));
     this.query('#dock').querySelectorAll<HTMLButtonElement>('[data-archive-scene]').forEach((button) => button.addEventListener('click', () => {
       this.selectedStoryArchive = button.dataset.archiveScene ?? unlocked[0].id;
@@ -309,40 +401,97 @@ class FishingApp {
   }
 
   private currentQuest(): { title: string; description: string; progress: number; counter: string } {
-    if (this.save.chapter >= 2) return { title:'第一章の観測完了', description:'三日月形の傷を持つ銀色魚の古い記録を発見した。次章は今後のアップデートで追加予定。', progress:100, counter:'COMPLETE' };
+    if (this.save.chapter >= 2) return { title:'第一章の観測完了', description:'観測帳には河口での目撃記録が残っている。夕暮れの港が、次の調査候補だ。', progress:100, counter:'次の調査：夕暮れの港' };
     if (this.save.chapter === 0) {
       const species = Object.keys(this.save.records).length;
       return { title:'大学裏の生態を調べる', description:'合計3匹、2魚種を観測して先輩へ報告しよう。', progress:Math.min(100, Math.min(this.save.totalCaught/3, species/2)*100), counter:`${this.save.totalCaught}/3匹・${species}/2種` };
     }
+    if (!this.hasFlag('uzawa-intro-seen')) return { title:'川を知る人に会う', description:'月波釣具店を訪ね、店主の鵜沢さんに銀色魚の目撃を相談しよう。', progress:8, counter:'目的地：釣具屋' };
     if (!this.hasFlag('stream-arrival-seen')) return { title:'青葉渓流へ向かう', description:'移動画面から青葉渓流を選び、鵜沢さんに会おう。', progress:15, counter:'目的地：青葉渓流' };
     if (!this.save.records.yamame) return { title:'渓流の宝石を観測', description:'川虫を使い、白泡の横を狙ってヤマメを釣ろう。', progress:35, counter:'ヤマメ 0/1' };
     const streamSpecies = FISH_LIST.filter((fish) => fish.habitat.includes('mountain-stream') && this.save.records[fish.id]).length;
     const streamCount = this.save.stageCatchCounts['mountain-stream'] ?? 0;
     if (!streamSurveyReady(this.save)) return { title:'渓流の違う顔を見る', description:'青葉渓流で合計3匹・2魚種を観測する。', progress:55 + Math.min(35, Math.min(streamCount/3, streamSpecies/2)*35), counter:`${streamCount}/3匹・${streamSpecies}/2種` };
-    return { title:'研究室へ戻って報告', description:'観測記録を森野先輩と整理しよう。', progress:95, counter:'帰還可能' };
+    if (!this.hasFlag('stream-mid-report-seen')) return { title:'研究室へ戻って中間報告', description:'渓流の観測記録を森野先輩と整理しよう。', progress:72, counter:'報告可能' };
+    if (!this.hasFlag('deep-pool-clue-seen')) return { title:'深みの入口を探す', description:'青葉渓流へ戻り、鵜沢さんと流れの深みを調べよう。', progress:80, counter:'目的地：青葉渓流' };
+    if (!this.hasFlag('iwana-challenge-seen')) return { title:'深みの大型イワナ', description:'地点「深い落ち込み」を選び、川虫を遠めへ流して大型イワナを釣ろう。', progress:90, counter:'大型イワナ 0/1' };
+    return { title:'研究室へ戻って最終報告', description:'大型イワナの傷と古い観測帳を照らし合わせよう。', progress:98, counter:'帰還可能' };
+  }
+
+  private continueChapterOne(): void {
+    this.playStory('streamMidReport', () => {
+      this.showHypothesisBoard(() => {
+        this.addFlag('flow-boundary-deduced');
+        this.addFlag('stream-mid-report-seen');
+        this.addFlag('deep-pool-open');
+        persistSave(this.save);
+        this.activateTab('home');
+        this.toast('観測仮説を保存：流れの境目と深み');
+      });
+    });
+  }
+
+  private showHypothesisBoard(onComplete: () => void): void {
+    const overlay = this.query('#overlay');
+    overlay.innerHTML = `<div class="hypothesis-dimmer"><section class="hypothesis-board"><header><small>OBSERVATION REVIEW</small><h2>観測結果から仮説を立てる</h2><p>ヤマメと、もう一種の魚がいた場所。共通していたのは？</p></header><div class="evidence-row"><span>白泡の脇</span><i>＋</i><span>岩の裏</span></div><div class="hypothesis-options"><button data-hypothesis="fast">水が最も速い場所</button><button data-hypothesis="boundary">速い流れと緩い流れの境目</button><button data-hypothesis="bright">川底が明るく見える場所</button></div><p id="hypothesis-result" class="hypothesis-result">観測メモを見比べて選ぼう。</p><button id="hypothesis-confirm" class="primary hidden">この仮説で深みを調べる</button></section></div>`;
+    const result = overlay.querySelector<HTMLElement>('#hypothesis-result')!;
+    const confirm = overlay.querySelector<HTMLButtonElement>('#hypothesis-confirm')!;
+    overlay.querySelectorAll<HTMLButtonElement>('[data-hypothesis]').forEach((button) => button.addEventListener('click', () => {
+      sfx('tap');
+      if (button.dataset.hypothesis !== 'boundary') {
+        button.classList.add('wrong');
+        result.innerHTML = '<b>森野先輩</b>「速さそのものではなく、魚が休める場所を見てみよう」';
+        return;
+      }
+      overlay.querySelectorAll<HTMLButtonElement>('[data-hypothesis]').forEach((item) => { item.disabled = true; });
+      button.classList.add('correct');
+      result.innerHTML = '<b>仮説成立</b>流れの境目には魚が留まる。次は、その流れが落ち込む深みを調べる。';
+      confirm.classList.remove('hidden');
+    }));
+    confirm.addEventListener('click', () => {
+      sfx('tap');
+      overlay.innerHTML = '';
+      onComplete();
+    });
   }
 
   private hasFlag(flag: string): boolean { return this.save.storyFlags.includes(flag); }
   private addFlag(flag: string): void { if (!this.hasFlag(flag)) this.save.storyFlags.push(flag); }
 
   private renderFishing(): void {
+    const dock = this.query('#dock');
+    dock.classList.remove('fight-mode','landing-mode');
+    dock.scrollTop = 0;
     const stage = STAGES[this.save.activeStage];
     const baits: BaitId[] = ['練り餌','ミミズ','川虫','ルアー'];
     const equipped = Object.fromEntries((['rod','float','hook'] as GearCategory[]).map((category) => [category, GEAR.find((gear) => gear.id === this.save.equipped[category])!])) as Record<GearCategory, typeof GEAR[number]>;
     const rodEffect = Math.round((1 - (1 - equipped.rod.control * 1.05)) * 100);
     const floatBonus = Math.round(equipped.float.control * 900);
     const hookBonus = Math.round(equipped.hook.control * 900);
-    this.query('#dock').innerHTML = `
+    const deepPoolUnlocked = this.hasFlag('deep-pool-clue-seen');
+    if (this.save.activeStage !== 'mountain-stream') this.fishingSpot = 'rapid';
+    if (this.fishingSpot === 'deep-pool' && !deepPoolUnlocked) this.fishingSpot = 'rapid';
+    this.scene?.setDeepPool(this.fishingSpot === 'deep-pool');
+    const spotRow = this.save.activeStage === 'mountain-stream' ? `<div class="spot-row"><span>地点</span><button data-spot="edge" class="${this.fishingSpot === 'edge' ? 'selected' : ''}">岸際の淀み</button><button data-spot="rapid" class="${this.fishingSpot === 'rapid' ? 'selected' : ''}">白泡の瀬</button><button data-spot="deep-pool" class="${this.fishingSpot === 'deep-pool' ? 'selected' : ''}" ${deepPoolUnlocked ? '' : 'disabled'}>${deepPoolUnlocked ? '深い落ち込み' : '未調査'}</button></div>` : '';
+    dock.innerHTML = `
       <div class="location-row"><div><small>現在地</small><strong>${stage.name}</strong></div><p>${stage.description}</p></div>
+      ${spotRow}
       <div class="bait-row"><span>エサ</span>${baits.map((bait) => `<button data-bait="${bait}" class="chip ${bait === this.save.bait ? 'selected' : ''}">${bait}</button>`).join('')}</div>
       <div class="tackle-strip"><span><i>竿</i>${equipped.rod.name}<small>${rodEffect ? `張力 -${rodEffect}%` : '標準'}</small></span><span><i>浮</i>${equipped.float.name}<small>${floatBonus ? `合わせ +${floatBonus}ms` : '標準'}</small></span><span><i>針</i>${equipped.hook.name}<small>${hookBonus ? `+${hookBonus}ms・疲労UP` : '標準'}</small></span></div>
       <div class="cast-panel" id="cast-panel">
         <div class="phase-copy"><small id="phase-label">CAST</small><strong id="phase-title">狙う距離を決めよう</strong><p id="phase-help">ボタンでメーターを動かし、もう一度押してキャスト</p></div>
         <div class="cast-meter" id="cast-meter"><i style="left:${this.castPower*100}%"></i></div>
         <div id="fight-hud" class="fight-hud hidden"><label>糸のテンション <b id="tension-text">安定</b></label><div class="gauge tension"><i id="tension-bar"></i><em></em></div><label>魚との距離 <b id="distance-text">70m</b></label><div class="gauge distance"><i id="distance-bar"></i></div><div id="fish-tell" class="fish-tell">魚の動きを見よう</div></div>
-        <div id="landing-hud" class="landing-hud hidden" role="button" tabindex="0" aria-label="タイミングを合わせて魚を引き上げる"><div class="landing-copy"><small>CLICK / TAP <i id="landing-size-label"></i></small><b>魚体が中央に来た瞬間を狙え</b><p>白い印が金色に重なったら、ゲージをクリックして引き上げる</p></div><div class="landing-gauge"><span id="landing-zone"></span><i id="landing-marker"></i><em>水面</em><em>足元</em></div></div>
+        <div id="landing-hud" class="landing-hud hidden" role="button" tabindex="0" aria-label="タイミングを合わせて魚を引き上げる"><div class="landing-copy"><small>CLICK / TAP <i id="landing-difficulty-label"></i></small><b>魚体が中央に来た瞬間を狙え</b><p>白い印が金色に重なったら、ゲージをクリックして引き上げる</p></div><div class="landing-gauge"><span id="landing-zone"></span><i id="landing-marker"></i><em>水面</em><em>足元</em></div></div>
         <button id="action" class="primary action-button">キャストを始める <kbd>Space</kbd></button>
       </div>`;
+    this.query('#dock').querySelectorAll<HTMLButtonElement>('[data-spot]').forEach((button) => button.addEventListener('click', () => {
+      if (this.phase !== 'idle' || button.disabled) return;
+      this.fishingSpot = button.dataset.spot as FishingSpot;
+      this.scene?.setDeepPool(this.fishingSpot === 'deep-pool');
+      sfx('tap');
+      this.renderFishing();
+    }));
     this.query('#dock').querySelectorAll<HTMLButtonElement>('[data-bait]').forEach((button) => button.addEventListener('click', () => {
       if (this.phase !== 'idle') return;
       this.save.bait = (button.dataset.bait as BaitId) ?? '練り餌';
@@ -390,8 +539,17 @@ class FishingApp {
   private landCast(): void {
     cancelAnimationFrame(this.castFrame);
     this.phase = 'waiting';
-    this.pendingFish = chooseFish(this.save.activeStage, this.save.bait, this.castPower);
-    this.pendingCatch = makeCatch(this.pendingFish, Math.random, this.castPower);
+    const deepPoolChallenge = this.save.chapter === 1 && this.save.activeStage === 'mountain-stream' && this.hasFlag('deep-pool-clue-seen') && !this.hasFlag('iwana-challenge-seen');
+    const deepPoolTarget = deepPoolChallenge && this.fishingSpot === 'deep-pool' && this.save.bait === '川虫' && this.castPower >= .58;
+    const habitatCast = this.save.activeStage !== 'mountain-stream'
+      ? this.castPower
+      : this.fishingSpot === 'edge'
+        ? this.castPower * .42
+        : this.fishingSpot === 'deep-pool'
+          ? .55 + this.castPower * .45
+          : .22 + this.castPower * .58;
+    this.pendingFish = deepPoolTarget ? FISH.iwana : chooseFish(this.save.activeStage, this.save.bait, habitatCast);
+    this.pendingCatch = deepPoolTarget ? makeCatch(this.pendingFish, () => .78, this.castPower) : makeCatch(this.pendingFish, Math.random, this.castPower);
     this.pendingPower = specimenPower(this.pendingFish, this.pendingCatch.size);
     this.scene?.setMood('waiting', this.castPower);
     sfx('cast');
@@ -432,8 +590,12 @@ class FishingApp {
     this.lastFrame = performance.now();
     this.query('#cast-meter').classList.add('hidden');
     this.query('#fight-hud').classList.remove('hidden');
-    const sizeTell = this.pendingCatch?.rank === '巨大' ? '桁違いに重い。暴れたら必ず糸を送れ' : this.pendingCatch?.rank === '大' ? '重い手応えだ。走りを見て慎重に寄せよう' : this.pendingCatch?.rank === '小' ? '軽い個体だ。リズムよく寄せよう' : '押して巻く／離して糸を緩める';
-    this.setCopy('FIGHT',`${this.pendingFish.name}が掛かった！`,sizeTell);
+    const dock = this.query('#dock');
+    dock.classList.add('fight-mode');
+    dock.classList.remove('landing-mode');
+    dock.scrollTop = 0;
+    const pullTell = this.pendingPower >= 1.18 ? '竿が深くしなる。強い走りに備えよう' : this.pendingPower >= 1.02 ? '確かな重みがある。動きを見て慎重に寄せよう' : '細かな振動が伝わる。リズムよく寄せよう';
+    this.setCopy('FIGHT','何かが掛かった！',pullTell);
     this.setAction('長押しで巻く');
     this.query<HTMLButtonElement>('#action').classList.remove('waiting');
     this.fightFrame = requestAnimationFrame((time) => this.updateFight(time));
@@ -471,14 +633,17 @@ class FishingApp {
     this.scene?.setMood('splash', this.castPower);
     this.query('#fight-hud').classList.add('hidden');
     this.query('#landing-hud').classList.remove('hidden');
+    const dock = this.query('#dock');
+    dock.classList.remove('fight-mode');
+    dock.classList.add('landing-mode');
+    dock.scrollTop = 0;
     const hookControl = GEAR.find((gear) => gear.id === this.save.equipped.hook)?.control ?? 0;
     const tolerance = landingTolerance(this.pendingFish, hookControl, this.pendingPower);
     const zone = this.query<HTMLElement>('#landing-zone');
     zone.style.top = `${(0.5 - tolerance) * 100}%`;
     zone.style.height = `${tolerance * 200}%`;
-    const rank = this.pendingCatch?.rank ?? '中';
-    const widthLabel = rank === '巨大' ? '極狭' : rank === '大' ? '狭い' : rank === '小' ? '広い' : '標準';
-    this.query('#landing-size-label').textContent = `${rank}サイズ｜${widthLabel}`;
+    const difficultyLabel = tolerance <= .105 ? '最高' : tolerance <= .135 ? '高' : tolerance <= .18 ? '中' : '低';
+    this.query('#landing-difficulty-label').textContent = `取り込み難度｜${difficultyLabel}`;
     this.landingPosition = .12;
     this.landingDirection = 1;
     this.landingLastFrame = performance.now();
@@ -521,25 +686,40 @@ class FishingApp {
     const fish = this.pendingFish;
     const item = this.pendingCatch ?? makeCatch(fish, Math.random, this.castPower);
     const previousChapter = this.save.chapter;
+    const firstCatchEvent = this.save.totalCaught === 0 && !this.hasFlag('first-catch-seen');
     const firstYamameEvent = fish.id === 'yamame' && this.save.activeStage === 'mountain-stream' && !this.hasFlag('yamame-story-seen');
+    const iwanaChallengeEvent = fish.id === 'iwana' && this.fishingSpot === 'deep-pool' && item.size >= fish.thresholds[1] && this.hasFlag('deep-pool-clue-seen') && !this.hasFlag('iwana-challenge-seen');
     const result = recordCatch(this.save, item, this.save.activeStage);
+    if (iwanaChallengeEvent) releaseCatch(this.save, item.uid);
     persistSave(this.save);
     this.updateMoney();
     sfx('catch');
     const tags = [result.isNew ? 'NEW!' : '', result.isRecord ? '自己新記録' : '', item.rank === '巨大' ? 'GIANT' : ''].filter(Boolean);
     const overlay = this.query('#overlay');
-    overlay.innerHTML = `<div class="catch-dimmer"><section class="catch-card ${item.rank === '巨大' ? 'giant' : ''}"><div class="catch-rays"></div><p class="catch-label">${tags.map((tag) => `<span>${tag}</span>`).join('')}</p><div class="catch-fish-stage"><img src="${fish.sprite}" alt="${fish.name}"></div><small>${'★'.repeat(fish.rarity)}${'☆'.repeat(4-fish.rarity)}</small><h2>${fish.name}</h2><div class="catch-size"><strong>${item.size.toFixed(1)}</strong> cm <i>${item.rank}サイズ</i></div><p>${item.weight.toFixed(1)} g　／　売値 ${item.value} G</p><button class="primary">記録して持ち帰る</button></section></div>`;
+    const disposition = iwanaChallengeEvent ? `${item.weight.toFixed(1)} g　／　深みの主・要リリース` : `${item.weight.toFixed(1)} g　／　売値 ${item.value} G`;
+    overlay.innerHTML = `<div class="catch-dimmer"><section class="catch-card ${item.rank === '巨大' ? 'giant' : ''}"><div class="catch-rays"></div><p class="catch-label">${tags.map((tag) => `<span>${tag}</span>`).join('')}</p><div class="catch-fish-stage"><img src="${fish.sprite}" alt="${fish.name}"></div><small>${'★'.repeat(fish.rarity)}${'☆'.repeat(4-fish.rarity)}</small><h2>${fish.name}</h2><div class="catch-size"><strong>${item.size.toFixed(1)}</strong> cm <i>${item.rank}サイズ</i></div><p>${disposition}</p><button class="primary">${iwanaChallengeEvent ? '傷を記録する' : '記録して持ち帰る'}</button></section></div>`;
     overlay.querySelector('button')?.addEventListener('click', () => {
       overlay.innerHTML = '';
       const chapterStarted = previousChapter === 0 && this.save.chapter === 1;
       this.resetFishing();
       this.renderFishing();
       if (chapterStarted) {
-        this.playStory('chapter1Unlock', () => {
-          this.addFlag('chapter1-intro-seen');
+        this.playStory('prologueCatchup', () => {
+          this.addFlag('prologue-caught-up');
           persistSave(this.save);
-          this.activateTab('home');
-          this.toast('青葉渓流が解放されました');
+          this.playStory('chapter1Unlock', () => {
+            this.addFlag('chapter1-intro-seen');
+            persistSave(this.save);
+            this.activateTab('home');
+            this.toast('新目標：月波釣具店を訪ねよう');
+          });
+        });
+      } else if (firstCatchEvent) {
+        this.addFlag('first-catch-seen');
+        persistSave(this.save);
+        this.playStory('firstCatch', () => {
+          this.renderFishing();
+          this.toast('初観測を保存した。別の距離とエサも試してみよう');
         });
       } else if (firstYamameEvent) {
         this.addFlag('yamame-story-seen');
@@ -548,9 +728,28 @@ class FishingApp {
           this.renderFishing();
           this.toast(streamSurveyReady(this.save) ? '調査完了。研究室へ戻ろう' : '新しい観測目標が追加されました');
         });
+      } else if (iwanaChallengeEvent) {
+        this.addFlag('iwana-challenge-seen');
+        persistSave(this.save);
+        this.playStory('iwanaChallengeCaught', () => {
+          this.showFishRelease(fish, item, () => {
+            this.renderFishing();
+            this.toast('イワナを深みに戻した。研究室で最終報告をまとめよう');
+          });
+        });
       } else if (this.save.chapter === 1 && streamSurveyReady(this.save)) {
-        this.toast('調査条件達成！ ホームへ戻ろう');
+        this.toast(this.hasFlag('stream-mid-report-seen') ? '深みの大型イワナを狙おう' : '基礎調査完了！ ホームへ戻ろう');
       }
+    });
+  }
+
+  private showFishRelease(fish: FishData, item: CatchItem, onComplete: () => void): void {
+    const overlay = this.query('#overlay');
+    overlay.innerHTML = `<div class="release-dimmer"><section class="release-card"><small>CATCH &amp; RELEASE</small><h2>記録して、川へ返す</h2><div class="release-water"><i></i><img src="${fish.sprite}" alt="${fish.name}"></div><p><b>${fish.name}　${item.size.toFixed(1)}cm</b>傷と大きさを記録した。深みの主は、もう一度冷たい流れへ戻っていく。</p><button class="primary">見送る</button></section></div>`;
+    overlay.querySelector('button')?.addEventListener('click', () => {
+      sfx('cast');
+      overlay.innerHTML = '';
+      onComplete();
     });
   }
 
@@ -558,19 +757,50 @@ class FishingApp {
     this.playStory('chapter1Finale', () => {
       this.save.chapter = 2;
       this.addFlag('chapter1-complete');
-      let reward = '波読みの浮きを入手';
+      const gear = GEAR.find((item) => item.id === 'float-2')!;
+      const previousGear = this.save.equipped.float;
+      let rewardSource = 'CHAPTER REWARD｜第一章 調査報酬';
       if (!this.save.ownedGear.includes('float-2')) {
         this.save.ownedGear.push('float-2');
         this.save.equipped.float = 'float-2';
       } else {
         this.save.money += 450;
-        reward = '調査謝礼 450 Gを入手';
+        rewardSource = 'CHAPTER REWARD｜所持済み・調査謝礼 450 G';
       }
       persistSave(this.save);
       this.updateMoney();
-      this.activateTab('home');
-      this.toast(`第一章クリア｜${reward}`);
+      this.showGearReward(gear, previousGear, rewardSource, () => {
+        this.activateTab('home');
+        this.toast('第一章クリア｜古い観測帳の記録を保存した');
+      });
     });
+  }
+
+  private gearEffect(gear: GearData): string {
+    if (gear.level === 1) return '基本性能。操作の癖をそのまま感じられる。';
+    if (gear.category === 'rod') return `テンション上昇を約${Math.round(gear.control * 105)}%抑える`;
+    if (gear.category === 'float') return `本アタリの受付を約${Math.round(gear.control * 900)}ms延長`;
+    return `合わせの受付を約${Math.round(gear.control * 900)}ms延長し、魚を疲れさせる`;
+  }
+
+  private showGearReward(gear: GearData, previousGearId: string, source: string, onClose?: () => void): void {
+    const overlay = this.query('#overlay');
+    const previous = GEAR.find((item) => item.id === previousGearId) ?? gear;
+    const asset = gear.asset ? `<img src="${gear.asset}" alt="${gear.name}">` : `<b class="gear-fallback">${CATEGORY_NAMES[gear.category]}</b>`;
+    overlay.innerHTML = `<div class="reward-dimmer"><section class="gear-reward"><div class="reward-rays"></div><i class="reward-spark s1"></i><i class="reward-spark s2"></i><i class="reward-spark s3"></i><p class="reward-source">${source}</p><div class="reward-art">${asset}</div><small>${CATEGORY_NAMES[gear.category]}　LV.${gear.level}</small><h2>${gear.name}</h2><p class="reward-description">${gear.description}</p><div class="reward-effect"><span>GEAR EFFECT</span><b>${this.gearEffect(gear)}</b></div><div class="reward-compare"><span>${previous.name}</span><i>▶</i><strong>${gear.name}</strong></div><div class="reward-actions"><button id="reward-later" class="reward-secondary">あとで</button><button id="reward-equip" class="primary">この道具を使う</button></div></section></div>`;
+    const close = (equip: boolean) => {
+      this.save.equipped[gear.category] = equip ? gear.id : previousGearId;
+      persistSave(this.save);
+      overlay.innerHTML = '';
+      sfx(equip ? 'buy' : 'tap');
+      onClose?.();
+      if (!onClose) {
+        this.renderShop();
+        this.toast(equip ? `${gear.name}を装備した` : `${gear.name}を道具箱へしまった`);
+      }
+    };
+    overlay.querySelector('#reward-equip')?.addEventListener('click', () => close(true));
+    overlay.querySelector('#reward-later')?.addEventListener('click', () => close(false));
   }
 
   private failFishing(message: string): void {
@@ -599,6 +829,7 @@ class FishingApp {
     this.pendingPower = 1;
     this.fightState = undefined;
     this.isReeling = false;
+    this.query('#dock').classList.remove('fight-mode','landing-mode');
   }
 
   private clearTimers(): void { this.timers.forEach(clearTimeout); this.timers = []; }
@@ -614,22 +845,39 @@ class FishingApp {
     const difficulty = Math.max(1, Math.min(5, Math.round(fish.difficulty * 2.3)));
     this.query('#dock').innerHTML = `<div class="section-heading"><div><small>FIELD NOTE</small><h2>魚類観測図鑑</h2></div><div class="completion"><b>${Math.round(found/FISH_LIST.length*100)}%</b><span>${found} / ${FISH_LIST.length} 種</span></div></div>
       <div class="book-layout"><div class="fish-list">${FISH_LIST.map((item, index) => { const known = this.save.records[item.id]; return `<button data-fish="${item.id}" class="${item.id===fish.id?'selected':''} ${known?'':'unknown'}"><span>${known ? String(index+1).padStart(2,'0') : '??'}</span><b>${known ? item.name : '未観測'}</b><small>${known ? `${known.maxSize.toFixed(1)}cm` : '——'}</small></button>`; }).join('')}</div>
-      <article class="fish-entry ${record?'':'silhouette'}"><div class="entry-visual"><img src="${fish.sprite}" alt=""><span>${'★'.repeat(fish.rarity)}${'☆'.repeat(4-fish.rarity)}</span></div><small>NO.${String(FISH_LIST.indexOf(fish)+1).padStart(2,'0')}</small><h3>${record ? fish.name : '？？？？'}</h3><p>${record ? fish.description : 'まだ観測されていない。釣り場やエサを変えてみよう。'}</p>${record ? `<dl><div><dt>生息域</dt><dd>${fish.habitat.map((id) => STAGES[id].name).join('・')}</dd></div><div><dt>サイズ域</dt><dd>${fish.minSize}–${fish.maxSize} cm</dd></div><div><dt>好物</dt><dd>${fish.preferredBaits.join('・')}</dd></div><div><dt>狙い目</dt><dd>${distanceNames[fish.distancePreference]}</dd></div><div><dt>手強さ</dt><dd class="difficulty">${'◆'.repeat(difficulty)}${'◇'.repeat(5-difficulty)}</dd></div><div><dt>最大記録</dt><dd>${record.maxSize.toFixed(1)} cm</dd></div><div><dt>捕獲数</dt><dd>${record.count} 匹</dd></div><div><dt>初観測</dt><dd>${STAGES[record.firstStage].name}</dd></div></dl><div class="rank-stamps">${rankLabels.map((rank) => `<i class="${record.ranks.includes(rank as never)?'on':''}">${rank}</i>`).join('')}</div>` : ''}</article></div>`;
+      <article class="fish-entry ${record?'':'silhouette'}"><div class="entry-visual">${record ? `<img src="${fish.sprite}" alt="${fish.name}"><span>${'★'.repeat(fish.rarity)}${'☆'.repeat(4-fish.rarity)}</span>` : '<div class="unknown-specimen" aria-label="未観測の魚"><i>?</i><b></b><b></b></div>'}</div><small>${record ? `NO.${String(FISH_LIST.indexOf(fish)+1).padStart(2,'0')}` : 'UNREGISTERED'}</small><h3>${record ? fish.name : '未観測'}</h3><p>${record ? fish.description : '釣り上げるまで、名前も大きさも分からない。水面の気配を頼りに探してみよう。'}</p>${record ? `<dl><div><dt>生息域</dt><dd>${fish.habitat.map((id) => STAGES[id].name).join('・')}</dd></div><div><dt>サイズ域</dt><dd>${fish.minSize}–${fish.maxSize} cm</dd></div><div><dt>好物</dt><dd>${fish.preferredBaits.join('・')}</dd></div><div><dt>狙い目</dt><dd>${distanceNames[fish.distancePreference]}</dd></div><div><dt>手強さ</dt><dd class="difficulty">${'◆'.repeat(difficulty)}${'◇'.repeat(5-difficulty)}</dd></div><div><dt>最大記録</dt><dd>${record.maxSize.toFixed(1)} cm</dd></div><div><dt>捕獲数</dt><dd>${record.count} 匹</dd></div><div><dt>初観測</dt><dd>${STAGES[record.firstStage].name}</dd></div></dl><div class="rank-stamps">${rankLabels.map((rank) => `<i class="${record.ranks.includes(rank as never)?'on':''}">${rank}</i>`).join('')}</div>` : ''}</article></div>`;
     this.query('#dock').querySelectorAll<HTMLButtonElement>('[data-fish]').forEach((button) => button.addEventListener('click', () => { this.selectedBook = button.dataset.fish as typeof this.selectedBook; this.renderBook(); }));
   }
 
   private renderShop(): void {
     const basketValue = this.save.basket.reduce((sum, item) => sum + item.value, 0);
+    const visibleGear = GEAR.filter((gear) => gear.id !== 'float-2' || this.save.ownedGear.includes(gear.id) || this.save.chapter >= 2);
     this.query('#dock').innerHTML = `<div class="shop-head"><div class="shopkeeper"><span>釣</span></div><div><small>月波釣具店　店主・鵜沢</small><p>「道具は腕を助ける。でも、魚を見るのは君だよ」</p></div><strong id="money" class="shop-wallet">${this.save.money.toLocaleString()} G</strong></div>
       <button id="sell" class="sell-button" ${this.save.basket.length ? '' : 'disabled'}><span>釣果をまとめて売る <small>${this.save.basket.length}匹</small></span><strong>+ ${basketValue} G</strong></button>
-      <div class="gear-grid">${(['rod','float','hook'] as GearCategory[]).map((category) => `<section><h3>${CATEGORY_NAMES[category]}</h3>${GEAR.filter((gear) => gear.category === category).map((gear) => { const owned = this.save.ownedGear.includes(gear.id); const equipped = this.save.equipped[category] === gear.id; const locked = this.save.chapter < gear.unlockChapter; const unlockLabel = gear.unlockChapter === 1 ? '第一章' : '後半章'; return `<button data-gear="${gear.id}" class="gear ${equipped?'equipped':''}" ${locked?'disabled':''}><i>Lv.${gear.level}</i><span><b>${gear.name}</b><small>${gear.description}</small></span><em>${locked?unlockLabel:equipped?'装備中':owned?'装備する':`${gear.price} G`}</em></button>`; }).join('')}</section>`).join('')}</div>`;
+      <div class="gear-grid">${(['rod','float','hook'] as GearCategory[]).map((category) => `<section><h3>${CATEGORY_NAMES[category]}</h3>${visibleGear.filter((gear) => gear.category === category).map((gear) => { const owned = this.save.ownedGear.includes(gear.id); const equipped = this.save.equipped[category] === gear.id; const locked = this.save.chapter < gear.unlockChapter; const unlockLabel = gear.unlockChapter === 1 ? '第一章' : '第四章'; const art = gear.asset ? `<img src="${gear.asset}" alt="">` : '<span>?</span>'; return `<button data-gear="${gear.id}" class="gear ${equipped?'equipped':''}" ${locked?'disabled':''}><div class="gear-icon">${art}<i>Lv.${gear.level}</i></div><span><b>${gear.name}</b><small>${gear.description}</small></span><em>${locked?unlockLabel:equipped?'装備中':owned?'装備する':`${gear.price} G`}</em></button>`; }).join('')}</section>`).join('')}</div>`;
     this.root.querySelector('#sell')?.addEventListener('click', () => { const earned = sellBasket(this.save); persistSave(this.save); this.updateMoney(); sfx('buy'); this.toast(`${earned} G で買い取ってもらった`); this.renderShop(); });
     this.query('#dock').querySelectorAll<HTMLButtonElement>('[data-gear]').forEach((button) => button.addEventListener('click', () => {
-      const result = buyOrEquip(this.save, button.dataset.gear ?? '');
+      const gear = GEAR.find((item) => item.id === button.dataset.gear);
+      if (!gear) return this.toast('道具の情報を読み込めませんでした');
+      const previousGear = this.save.equipped[gear.category];
+      const result = buyOrEquip(this.save, gear.id);
       if (result === 'poor') return this.toast('所持金が足りない');
       if (result === 'locked') return this.toast('物語を進めると入荷します');
-      persistSave(this.save); this.updateMoney(); sfx('buy'); this.toast(result === 'bought' ? '購入して装備した！' : '装備を変更した'); this.renderShop();
+      persistSave(this.save);
+      this.updateMoney();
+      sfx('buy');
+      if (result === 'bought') return this.showGearReward(gear, previousGear, 'NEW TACKLE｜月波釣具店');
+      this.toast('装備を変更した');
+      this.renderShop();
     }));
+    if (this.save.chapter === 1 && !this.hasFlag('uzawa-intro-seen') && !this.query('#overlay').innerHTML) {
+      this.playStory('tackleShopIntro', () => {
+        completeTackleShopVisit(this.save);
+        persistSave(this.save);
+        this.renderShop();
+        this.toast('青葉渓流への調査ルートと川虫を入手した');
+      });
+    }
   }
 
   private renderMap(): void {
@@ -643,26 +891,22 @@ class FishingApp {
   private travelTo(id: StageId): void {
     if (!this.save.unlockedStages.includes(id)) return this.toast('物語を進めると、このルートを調査できます');
     this.save.activeStage = id;
+    this.fishingSpot = 'rapid';
     this.scene?.setStage(id);
+    this.scene?.setDeepPool(false);
     sfx('tap');
-    if (id === 'mountain-stream' && !this.hasFlag('stream-arrival-seen')) {
-      this.addFlag('stream-arrival-seen');
-      persistSave(this.save);
-      this.playStory('streamArrival', () => {
-        this.activateTab('fish');
-        this.toast('主目標：ヤマメを観測する');
-      });
-    } else {
-      persistSave(this.save);
-      this.activateTab('fish');
-      this.toast(`${STAGES[id].name}へ移動した`);
-    }
+    const hasArrivalStory = id === 'mountain-stream' && !this.hasFlag('stream-arrival-seen');
+    const hasDeepPoolStory = id === 'mountain-stream' && this.hasFlag('deep-pool-open') && !this.hasFlag('deep-pool-clue-seen');
+    persistSave(this.save);
+    this.activateTab('fish');
+    if (!hasArrivalStory && !hasDeepPoolStory) this.toast(`${STAGES[id].name}へ移動した`);
   }
 
   private showSettings(): void {
     const overlay = this.query('#overlay');
-    overlay.innerHTML = `<section class="settings-card"><h2>設定・セーブ</h2><p>進行は操作のたびにブラウザへ自動保存されます。</p><dl><div><dt>章</dt><dd>${this.save.chapter === 0 ? '序章' : this.save.chapter === 1 ? '第一章' : '第一章クリア'}</dd></div><div><dt>総捕獲</dt><dd>${this.save.totalCaught}匹</dd></div><div><dt>図鑑</dt><dd>${Object.keys(this.save.records).length}/${FISH_LIST.length}種</dd></div></dl><button id="close-settings" class="primary">ゲームへ戻る</button><button id="erase" class="danger-button">セーブデータを消去</button></section>`;
+    overlay.innerHTML = `<section class="settings-card"><h2>設定・セーブ</h2><p>進行は操作のたびにブラウザへ自動保存されます。</p><dl><div><dt>章</dt><dd>${this.save.chapter === 0 ? '序章' : this.save.chapter === 1 ? '第一章' : '第一章クリア'}</dd></div><div><dt>総捕獲</dt><dd>${this.save.totalCaught}匹</dd></div><div><dt>図鑑</dt><dd>${Object.keys(this.save.records).length}/${FISH_LIST.length}種</dd></div></dl><button id="close-settings" class="primary">ゲームへ戻る</button><button id="replay-prologue" class="tiny-button replay-prologue">冒頭「最初の遭遇」を再生</button><button id="erase" class="danger-button">セーブデータを消去</button></section>`;
     overlay.querySelector('#close-settings')?.addEventListener('click', () => overlay.innerHTML = '');
+    overlay.querySelector('#replay-prologue')?.addEventListener('click', () => this.playFirstEncounter());
     overlay.querySelector('#erase')?.addEventListener('click', () => { if (window.confirm('すべての記録を消去しますか？')) { eraseSave(); location.reload(); } });
   }
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FISH } from '../data/fish';
 import { createNewSave } from './save';
-import { chooseFish, encounterChances, encounterScore, makeCatch, recordCatch, sellBasket, sizeRank, streamSurveyReady } from './fishing';
+import { chooseFish, completeTackleShopVisit, encounterChances, encounterScore, makeCatch, recordCatch, releaseCatch, sellBasket, sizeRank, streamSurveyReady } from './fishing';
 import { biteWindowMs, canLandFish, createFightState, getFightBeat, landingTolerance, specimenPower, stepFight } from './fight';
 
 describe('fishing rules', () => {
@@ -41,7 +41,7 @@ describe('fishing rules', () => {
     expect(far.rank).not.toBe('巨大');
   });
 
-  it('records catches, records and chapter unlocks without grind', () => {
+  it('records catches and opens the first-chapter introduction without skipping the tackle-shop visit', () => {
     const save = createNewSave();
     const first = makeCatch(FISH.oikawa, () => .5);
     const second = makeCatch(FISH.funa, () => .6);
@@ -51,7 +51,8 @@ describe('fishing rules', () => {
     expect(save.records.oikawa?.count).toBe(2);
     expect(save.records.oikawa?.maxSize).toBeGreaterThanOrEqual(first.size);
     expect(save.chapter).toBe(1);
-    expect(save.unlockedStages).toContain('mountain-stream');
+    expect(save.storyFlags).toContain('chapter1-unlocked');
+    expect(save.unlockedStages).not.toContain('mountain-stream');
   });
 
   it('sells the basket while preserving encyclopedia records', () => {
@@ -63,6 +64,24 @@ describe('fishing rules', () => {
     expect(save.money).toBe(before + item.value);
     expect(save.basket).toHaveLength(0);
     expect(save.records.koi?.count).toBe(1);
+  });
+
+  it('unlocks the mountain stream only after meeting Uzawa at the tackle shop', () => {
+    const save = createNewSave();
+    save.chapter = 1;
+    completeTackleShopVisit(save);
+    expect(save.storyFlags).toContain('uzawa-intro-seen');
+    expect(save.unlockedStages).toContain('mountain-stream');
+    expect(save.bait).toBe('川虫');
+  });
+
+  it('keeps a released fish in the observation record but removes it from the sell basket', () => {
+    const save = createNewSave();
+    const item = makeCatch(FISH.iwana, () => .78, .8);
+    recordCatch(save, item, 'mountain-stream');
+    releaseCatch(save, item.uid);
+    expect(save.records.iwana?.count).toBe(1);
+    expect(save.basket).not.toContainEqual(item);
   });
 
   it('completes the first chapter survey with three stream catches and two species', () => {

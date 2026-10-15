@@ -70,7 +70,6 @@ export function recordCatch(save: SaveData, item: CatchItem, stage: StageId, now
   const species = Object.keys(save.records).length;
   if (save.chapter === 0 && save.totalCaught >= 3 && species >= 2) {
     save.chapter = 1;
-    if (!save.unlockedStages.includes('mountain-stream')) save.unlockedStages.push('mountain-stream');
     if (!save.storyFlags.includes('chapter1-unlocked')) save.storyFlags.push('chapter1-unlocked');
   }
   return { isNew, isRecord };
@@ -79,6 +78,16 @@ export function recordCatch(save: SaveData, item: CatchItem, stage: StageId, now
 export function streamSurveyReady(save: SaveData): boolean {
   const streamSpecies = Object.values(FISH).filter((fish) => fish.habitat.includes('mountain-stream') && save.records[fish.id]).length;
   return Boolean(save.records.yamame) && streamSpecies >= 2 && (save.stageCatchCounts['mountain-stream'] ?? 0) >= 3;
+}
+
+export function completeTackleShopVisit(save: SaveData): void {
+  if (!save.storyFlags.includes('uzawa-intro-seen')) save.storyFlags.push('uzawa-intro-seen');
+  if (!save.unlockedStages.includes('mountain-stream')) save.unlockedStages.push('mountain-stream');
+  save.bait = '川虫';
+}
+
+export function releaseCatch(save: SaveData, uid: string): void {
+  save.basket = save.basket.filter((item) => item.uid !== uid);
 }
 
 export function sellBasket(save: SaveData): number {

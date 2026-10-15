@@ -14,12 +14,14 @@ export class RiverScene extends Phaser.Scene {
   private ambientPixels: Phaser.GameObjects.Rectangle[] = [];
   private castX = 205;
   private castY = 215;
+  private deepPool = false;
 
   constructor() { super('river'); }
 
   preload(): void {
     this.load.image('bg-campus-river-v3', '/assets/backgrounds/campus-river-pixel-v3.png');
     this.load.image('bg-mountain-stream-v3', '/assets/backgrounds/mountain-stream-pixel-v3.png');
+    this.load.image('bg-mountain-stream-deep-v1', '/assets/backgrounds/mountain-stream-deep-pool-pixel-v1.png');
   }
 
   create(): void {
@@ -66,6 +68,18 @@ export class RiverScene extends Phaser.Scene {
   setStage(stageId: StageId): void {
     if (this.stageId === stageId) return;
     this.stageId = stageId;
+    if (stageId !== 'mountain-stream') this.deepPool = false;
+    this.redrawWorld();
+  }
+
+  setDeepPool(active: boolean): void {
+    const next = this.stageId === 'mountain-stream' && active;
+    if (this.deepPool === next) return;
+    this.deepPool = next;
+    this.redrawWorld();
+  }
+
+  private redrawWorld(): void {
     this.children.removeAll(true);
     this.waterLines = [];
     this.ripples = [];
@@ -90,17 +104,21 @@ export class RiverScene extends Phaser.Scene {
 
   private drawWorld(): void {
     const stream = this.stageId === 'mountain-stream';
-    this.add.image(195, 150, stream ? 'bg-mountain-stream-v3' : 'bg-campus-river-v3').setDisplaySize(390, 300).setDepth(0);
+    const backgroundKey = this.deepPool ? 'bg-mountain-stream-deep-v1' : stream ? 'bg-mountain-stream-v3' : 'bg-campus-river-v3';
+    this.add.image(195, 150, backgroundKey).setDisplaySize(390, 300).setDepth(0);
+    if (this.deepPool) {
+      this.add.rectangle(0, 0, 390, 300, 0x071c2b, .08).setOrigin(0).setDepth(1);
+    }
 
     // The source painting supplies the environment; these sparse highlights are
     // separate so the water still feels alive instead of behaving like wallpaper.
-    const waterStart = stream ? 188 : 165;
+    const waterStart = this.deepPool ? 158 : stream ? 188 : 165;
     for (let i = 0; i < 5; i++) {
-      const line = this.add.rectangle(190, waterStart + i * 27, 35 + (i % 4) * 22, i % 3 === 0 ? 2 : 1, stream ? 0xc9fff1 : 0xffd889, stream ? .18 : .2).setDepth(2);
+      const line = this.add.rectangle(190, waterStart + i * 27, 35 + (i % 4) * 22, i % 3 === 0 ? 2 : 1, this.deepPool ? 0x8ed5d4 : stream ? 0xc9fff1 : 0xffd889, this.deepPool ? .22 : stream ? .18 : .2).setDepth(2);
       this.waterLines.push(line);
     }
     if (stream) {
-      for (let i = 0; i < 12; i++) {
+      for (let i = 0; i < (this.deepPool ? 6 : 12); i++) {
         const fall = this.add.rectangle(246 + (i * 29) % 122, 118 + (i % 5) * 13, i % 3 === 0 ? 4 : 2, 5 + i % 4, 0xdcfff7, .42).setDepth(2);
         fall.setData('kind', 'fall');
         this.ambientPixels.push(fall);
@@ -128,9 +146,9 @@ export class RiverScene extends Phaser.Scene {
       this.add.rectangle(0, -5, 11, 8, 0xe65645),
     ]).setDepth(8).setVisible(false);
     for (let i = 0; i < 3; i++) this.ripples.push(this.add.ellipse(205, 328, 38, 12).setStrokeStyle(2, stream ? 0xc9fff1 : 0xffe2a0).setDepth(5).setVisible(false));
-    this.add.rectangle(10, 10, stream ? 154 : 174, 49, 0x091c28, .74).setOrigin(0).setStrokeStyle(1, stream ? 0x8bc5a3 : 0xd9a451, .8).setDepth(9);
-    this.add.text(18, 15, stream ? '青葉渓流' : '大学裏の川', { fontFamily:'serif', fontSize:'18px', color:'#fff4cf', stroke:'#091923', strokeThickness:3 }).setDepth(10);
-    this.add.text(18, 40, stream ? '第一章｜川の上流にて' : '序章｜実験が終わるまで', { fontFamily:'sans-serif', fontSize:'9px', color:stream ? '#bfe6d0' : '#ffd78a' }).setDepth(10);
+    this.add.rectangle(10, 10, this.deepPool ? 186 : stream ? 154 : 174, 49, 0x091c28, .78).setOrigin(0).setStrokeStyle(1, stream ? 0x8bc5a3 : 0xd9a451, .8).setDepth(9);
+    this.add.text(18, 15, this.deepPool ? '青葉渓流・深み' : stream ? '青葉渓流' : '大学裏の川', { fontFamily:'serif', fontSize:'18px', color:'#fff4cf', stroke:'#091923', strokeThickness:3 }).setDepth(10);
+    this.add.text(18, 40, this.deepPool ? '第一章｜閉鎖取水路の下' : stream ? '第一章｜川の上流にて' : '序章｜昨日の銀色を探して', { fontFamily:'sans-serif', fontSize:'9px', color:stream ? '#bfe6d0' : '#ffd78a' }).setDepth(10);
   }
 
   private makeSplash(): void {
