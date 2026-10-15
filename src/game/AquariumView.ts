@@ -9,9 +9,14 @@ interface SwimmingFish {
   width: number;
   height: number;
   speed: number;
+  cruiseSpeed: number;
   direction: 1 | -1;
+  facing: number;
   phase: number;
   depth: number;
+  targetY: number;
+  verticalSpeed: number;
+  behavior: 'calm' | 'sprinter' | 'diver' | 'power' | 'trickster';
 }
 
 export class AquariumView {
@@ -58,9 +63,14 @@ export class AquariumView {
       width,
       height:Math.round(width * .5),
       speed:(13 + (index % 3) * 3) * speedFactor,
+      cruiseSpeed:(13 + (index % 3) * 3) * speedFactor,
       direction:index % 2 ? -1 : 1,
+      facing:index % 2 ? -1 : 1,
       phase:index * 1.37,
       depth:.72 + (index % 3) * .12,
+      targetY:58 + (index * 43) % 112,
+      verticalSpeed:fish.behavior === 'diver' ? 7 : fish.behavior === 'sprinter' ? 5 : 3,
+      behavior:fish.behavior,
     };
   }
 
@@ -77,14 +87,27 @@ export class AquariumView {
   private tick(time: number): void {
     const dt = this.lastTime ? Math.min((time - this.lastTime) / 1000, .05) : 0;
     this.lastTime = time;
-    this.update(dt);
+    this.update(dt, time / 1000);
     this.draw(time / 1000);
     this.frame = requestAnimationFrame((next) => this.tick(next));
   }
 
-  private update(dt: number): void {
+  private update(dt: number, time: number): void {
     this.swimmers.forEach((fish) => {
+      const pulse = Math.sin(time * .72 + fish.phase);
+      const burst = fish.behavior === 'sprinter'
+        ? .72 + Math.pow(Math.max(0, Math.sin(time * 1.45 + fish.phase)), 3) * .78
+        : fish.behavior === 'trickster'
+          ? .72 + Math.abs(Math.sin(time * .58 + fish.phase)) * .52
+          : fish.behavior === 'power'
+            ? .82 + pulse * .12
+            : .78 + pulse * .2;
+      fish.speed += (fish.cruiseSpeed * burst - fish.speed) * Math.min(1, dt * 2.4);
       fish.x += fish.speed * fish.direction * dt;
+      fish.facing += (fish.direction - fish.facing) * Math.min(1, dt * 5.5);
+      const verticalRange = fish.behavior === 'diver' ? 42 : fish.behavior === 'trickster' ? 27 : 18;
+      fish.targetY = 114 + Math.sin(time * (fish.behavior === 'diver' ? .34 : .19) + fish.phase) * verticalRange;
+      fish.y += Math.sign(fish.targetY - fish.y) * Math.min(Math.abs(fish.targetY - fish.y), fish.verticalSpeed * dt);
       const margin = fish.width * .47 + 8;
       if (fish.x > this.width - margin) { fish.x = this.width - margin; fish.direction = -1; }
       if (fish.x < margin) { fish.x = margin; fish.direction = 1; }
@@ -121,21 +144,60 @@ export class AquariumView {
 
   private drawFish(fish: SwimmingFish, time: number): void {
     const ctx = this.context;
-    const bob = Math.sin(time * (1.1 + fish.speed / 35) + fish.phase) * 3;
-    const roll = Math.sin(time * .8 + fish.phase) * .018;
+    const bob = Math.sin(time * (1.1 + fish.speed / 35) + fish.phase) * 2;
+    const roll = Math.sin(time * .8 + fish.phase) * .015;
+    const turnScale = Math.max(.12, Math.abs(fish.facing));
+    const direction = fish.facing < 0 ? -1 : 1;
+    const tailRate = 3.3 + fish.speed / 8;
+    const tailAmplitude = fish.behavior === 'calm' ? .075 : fish.behavior === 'power' ? .1 : .14;
+    const tailAngle = Math.sin(time * tailRate + fish.phase) * tailAmplitude * direction;
+
+    ctx.save();
+    ctx.globalAlpha = fish.depth * .25;
+    ctx.fillStyle = '#061f28';
+    const shadowWidth = Math.round(fish.width * (.28 + fish.depth * .18));
+    ctx.fillRect(Math.round(fish.x - shadowWidth / 2), 198 + Math.round((1 - fish.depth) * 7), shadowWidth, 3);
+    ctx.restore();
+
     ctx.save();
     ctx.translate(Math.round(fish.x), Math.round(fish.y + bob));
-    ctx.rotate(roll * fish.direction);
-    ctx.scale(fish.direction, 1);
+    ctx.rotate(roll * direction);
+    ctx.scale(direction * turnScale, 1);
     ctx.globalAlpha = fish.depth;
     if (this.selectedUid === fish.resident.uid) {
       ctx.fillStyle = '#ffe29a88';
-      ctx.fillRect(-fish.width/2 - 4, -fish.height/2 - 4, fish.width + 8, fish.height + 8);
+      ctx.fillRect(-fish.width/2 - 3, fish.height/2 + 3, fish.width + 6, 2);
     }
     if (fish.image.complete && fish.image.naturalWidth > 0) {
-      ctx.drawImage(fish.image, -fish.width/2, -fish.height/2, fish.width, fish.height);
+      this.drawArticulatedFish(fish, tailAngle);
     }
     ctx.restore();
+  }
+
+  private drawArticulatedFish(fish: SwimmingFish, tailAngle: number): void {
+    const ctx = this.context;
+    const sourceWidth = fish.image.naturalWidth;
+    const sourceHeight = fish.image.naturalHeight;
+    const tailEnd = .31;
+    const bodyStart = .25;
+    const attachX = -fish.width / 2 + fish.width * tailEnd;
+
+    ctx.save();
+    ctx.translate(attachX, 0);
+    ctx.rotate(tailAngle);
+    ctx.drawImage(
+      fish.image,
+      0, 0, sourceWidth * tailEnd, sourceHeight,
+      -fish.width * tailEnd, -fish.height / 2, fish.width * tailEnd, fish.height,
+    );
+    ctx.restore();
+
+    ctx.drawImage(
+      fish.image,
+      sourceWidth * bodyStart, 0, sourceWidth * (1 - bodyStart), sourceHeight,
+      -fish.width / 2 + fish.width * bodyStart, -fish.height / 2,
+      fish.width * (1 - bodyStart), fish.height,
+    );
   }
 
   private drawPlants(time: number, fresh: boolean): void {
