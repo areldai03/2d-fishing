@@ -160,8 +160,19 @@ export class RiverScene extends Phaser.Scene {
     ]).setDepth(8).setVisible(false);
     for (let i = 0; i < 3; i++) this.ripples.push(this.add.ellipse(205, 328, 38, 12).setStrokeStyle(2, stream ? 0xc9fff1 : port ? 0xffc58d : 0xffe2a0).setDepth(5).setVisible(false));
     this.add.rectangle(10, 10, this.deepPool ? 186 : stream ? 154 : port ? 164 : 174, 49, 0x091c28, .78).setOrigin(0).setStrokeStyle(1, stream ? 0x8bc5a3 : port ? 0xe28b5b : 0xd9a451, .8).setDepth(9);
-    this.add.text(18, 15, this.deepPool ? '青葉渓流・深み' : stream ? '青葉渓流' : port ? '月波港' : '大学裏の川', { fontFamily:'serif', fontSize:'18px', color:'#fff4cf', stroke:'#091923', strokeThickness:3 }).setDepth(10);
-    this.add.text(18, 40, this.deepPool ? '第一章｜閉鎖取水路の下' : stream ? '第一章｜川の上流にて' : port ? '第二章｜夕暮れの港' : '序章｜昨日の銀色を探して', { fontFamily:'sans-serif', fontSize:'9px', color:stream ? '#bfe6d0' : port ? '#ffc89a' : '#ffd78a' }).setDepth(10);
+    this.add.text(18, 15, this.deepPool ? '青葉渓流・深み' : stream ? '青葉渓流' : port ? '月波港' : '大学裏の川', {
+      fontFamily:'-apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif',
+      fontStyle:'700',
+      fontSize:'17px',
+      color:'#fff4cf',
+      shadow:{ offsetX:1, offsetY:1, color:'#091923', blur:0, stroke:false, fill:true },
+    }).setResolution(3).setDepth(10);
+    this.add.text(18, 40, this.deepPool ? '第一章｜閉鎖取水路の下' : stream ? '第一章｜川の上流にて' : port ? '第二章｜夕暮れの港' : '序章｜昨日の銀色を探して', {
+      fontFamily:'-apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif',
+      fontStyle:'600',
+      fontSize:'10px',
+      color:stream ? '#bfe6d0' : port ? '#ffc89a' : '#ffd78a',
+    }).setResolution(3).setDepth(10);
   }
 
   private makeSplash(): void {
