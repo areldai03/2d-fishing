@@ -53,6 +53,7 @@ export interface BaitData {
   id: BaitId;
   name: string;
   description: string;
+  asset: string;
   price: number;
   bundle: number;
   unlockChapter: number;
