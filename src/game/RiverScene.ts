@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import type { StageId } from '../types';
+import { FISHING_BACKGROUND_ASSETS, fishingSpotVisual, type FishingSpotId } from '../data/fishingSpots';
 
 export type WaterMood = 'idle' | 'cast' | 'waiting' | 'nibble' | 'bite' | 'fight' | 'splash';
 
@@ -14,15 +15,12 @@ export class RiverScene extends Phaser.Scene {
   private ambientPixels: Phaser.GameObjects.Rectangle[] = [];
   private castX = 205;
   private castY = 215;
-  private deepPool = false;
+  private fishingSpot: FishingSpotId = 'rapid';
 
   constructor() { super('river'); }
 
   preload(): void {
-    this.load.image('bg-campus-river-v3', '/assets/backgrounds/campus-river-pixel-v3.png');
-    this.load.image('bg-mountain-stream-v3', '/assets/backgrounds/mountain-stream-pixel-v3.png');
-    this.load.image('bg-mountain-stream-deep-v1', '/assets/backgrounds/mountain-stream-deep-pool-pixel-v1.png');
-    this.load.image('bg-tsukinami-port-v1', '/assets/backgrounds/tsukinami-port-pixel-v1.png');
+    FISHING_BACKGROUND_ASSETS.forEach(({ key, asset }) => this.load.image(key, asset));
   }
 
   create(): void {
@@ -69,14 +67,12 @@ export class RiverScene extends Phaser.Scene {
   setStage(stageId: StageId): void {
     if (this.stageId === stageId) return;
     this.stageId = stageId;
-    if (stageId !== 'mountain-stream') this.deepPool = false;
     this.redrawWorld();
   }
 
-  setDeepPool(active: boolean): void {
-    const next = this.stageId === 'mountain-stream' && active;
-    if (this.deepPool === next) return;
-    this.deepPool = next;
+  setFishingSpot(spot: FishingSpotId): void {
+    if (this.fishingSpot === spot) return;
+    this.fishingSpot = spot;
     this.redrawWorld();
   }
 
@@ -106,21 +102,23 @@ export class RiverScene extends Phaser.Scene {
   private drawWorld(): void {
     const stream = this.stageId === 'mountain-stream';
     const port = this.stageId === 'tsukinami-port';
-    const backgroundKey = this.deepPool ? 'bg-mountain-stream-deep-v1' : stream ? 'bg-mountain-stream-v3' : port ? 'bg-tsukinami-port-v1' : 'bg-campus-river-v3';
-    this.add.image(195, 150, backgroundKey).setDisplaySize(390, 300).setDepth(0);
-    if (this.deepPool) {
-      this.add.rectangle(0, 0, 390, 300, 0x071c2b, .08).setOrigin(0).setDepth(1);
+    const deepPool = stream && this.fishingSpot === 'deep-pool';
+    const visual = fishingSpotVisual(this.stageId, this.fishingSpot);
+    this.add.image(195, 150, visual.key).setDisplaySize(390, 300).setDepth(0);
+    if (visual.overlayColor && visual.overlayAlpha) {
+      this.add.rectangle(0, 0, 390, 300, visual.overlayColor, visual.overlayAlpha).setOrigin(0).setDepth(1);
     }
 
     // The source painting supplies the environment; these sparse highlights are
     // separate so the water still feels alive instead of behaving like wallpaper.
-    const waterStart = this.deepPool ? 158 : stream ? 188 : port ? 150 : 165;
+    const waterStart = visual.waterStart;
     for (let i = 0; i < 5; i++) {
-      const line = this.add.rectangle(190, waterStart + i * 27, 35 + (i % 4) * 22, i % 3 === 0 ? 2 : 1, this.deepPool ? 0x8ed5d4 : stream ? 0xc9fff1 : port ? 0xffb36b : 0xffd889, this.deepPool ? .22 : stream ? .18 : port ? .28 : .2).setDepth(2);
+      const line = this.add.rectangle(190, waterStart + i * 27, 35 + (i % 4) * 22, i % 3 === 0 ? 2 : 1, visual.waterColor, deepPool ? .22 : stream ? .18 : port ? .28 : .2).setDepth(2);
       this.waterLines.push(line);
     }
     if (stream) {
-      for (let i = 0; i < (this.deepPool ? 6 : 12); i++) {
+      const fallCount = deepPool ? 6 : this.fishingSpot === 'edge' ? 4 : 14;
+      for (let i = 0; i < fallCount; i++) {
         const fall = this.add.rectangle(246 + (i * 29) % 122, 118 + (i % 5) * 13, i % 3 === 0 ? 4 : 2, 5 + i % 4, 0xdcfff7, .42).setDepth(2);
         fall.setData('kind', 'fall');
         this.ambientPixels.push(fall);
@@ -158,16 +156,17 @@ export class RiverScene extends Phaser.Scene {
       this.add.ellipse(0, 0, 14, 25, 0xf3eee0).setStrokeStyle(3, 0x172c37),
       this.add.rectangle(0, -5, 11, 8, 0xe65645),
     ]).setDepth(8).setVisible(false);
-    for (let i = 0; i < 3; i++) this.ripples.push(this.add.ellipse(205, 328, 38, 12).setStrokeStyle(2, stream ? 0xc9fff1 : port ? 0xffc58d : 0xffe2a0).setDepth(5).setVisible(false));
-    this.add.rectangle(10, 10, this.deepPool ? 186 : stream ? 154 : port ? 164 : 174, 49, 0x091c28, .78).setOrigin(0).setStrokeStyle(1, stream ? 0x8bc5a3 : port ? 0xe28b5b : 0xd9a451, .8).setDepth(9);
-    this.add.text(18, 15, this.deepPool ? '青葉渓流・深み' : stream ? '青葉渓流' : port ? '月波港' : '大学裏の川', {
+    for (let i = 0; i < 3; i++) this.ripples.push(this.add.ellipse(205, 328, 38, 12).setStrokeStyle(2, visual.rippleColor).setDepth(5).setVisible(false));
+    const labelWidth = Math.min(236, Math.max(174, visual.title.length * 17 + 28));
+    this.add.rectangle(10, 10, labelWidth, 49, 0x091c28, .78).setOrigin(0).setStrokeStyle(1, visual.labelBorder, .8).setDepth(9);
+    this.add.text(18, 15, visual.title, {
       fontFamily:'-apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif',
       fontStyle:'700',
       fontSize:'17px',
       color:'#fff4cf',
       shadow:{ offsetX:1, offsetY:1, color:'#091923', blur:0, stroke:false, fill:true },
     }).setResolution(3).setDepth(10);
-    this.add.text(18, 40, this.deepPool ? '第一章｜閉鎖取水路の下' : stream ? '第一章｜川の上流にて' : port ? '第二章｜夕暮れの港' : '序章｜昨日の銀色を探して', {
+    this.add.text(18, 40, visual.subtitle, {
       fontFamily:'-apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif',
       fontStyle:'600',
       fontSize:'10px',

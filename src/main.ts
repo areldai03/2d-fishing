@@ -14,6 +14,7 @@ import { FISH, FISH_LIST } from './data/fish';
 import { BAITS } from './data/baits';
 import { GEAR, CATEGORY_NAMES } from './data/equipment';
 import { STAGES } from './data/stages';
+import type { FishingSpotId } from './data/fishingSpots';
 import { STORY } from './data/story';
 import { StoryPlayer } from './story/StoryPlayer';
 import { storyPortrait, storySpeakerName } from './story/characters';
@@ -21,7 +22,6 @@ import { setBgm, sfx, type BgmTheme } from './audio';
 import type { AquariumKind, AquariumResident, BaitId, CatchItem, FishData, GearCategory, GearData, SaveData, StageId } from './types';
 
 type FishingPhase = 'idle' | 'casting' | 'luring' | 'waiting' | 'nibble' | 'bite' | 'fight' | 'landing' | 'landing-result';
-type FishingSpot = 'edge' | 'rapid' | 'deep-pool' | 'harbor-wall' | 'breakwater' | 'river-mouth';
 
 class FishingApp {
   private root: HTMLElement;
@@ -46,7 +46,7 @@ class FishingApp {
   private selectedBook = FISH_LIST[0].id;
   private selectedStoryArchive = 'opening';
   private currentTab = 'home';
-  private fishingSpot: FishingSpot = 'rapid';
+  private fishingSpot: FishingSpotId = 'rapid';
   private lurePosition = .08;
   private lureDirection: 1 | -1 = 1;
   private lureHits = 0;
@@ -66,6 +66,7 @@ class FishingApp {
       if (scene?.scene.isActive()) {
         this.scene = scene;
         this.scene.setStage(this.save.activeStage);
+        this.scene.setFishingSpot(this.fishingSpot);
         clearInterval(wait);
       }
     }, 50);
@@ -292,7 +293,7 @@ class FishingApp {
       persistSave(this.save);
       this.playStory('deepPoolClue', () => {
         this.fishingSpot = 'deep-pool';
-        this.scene?.setDeepPool(true);
+        this.scene?.setFishingSpot(this.fishingSpot);
         this.renderFishing();
         this.toast('新地点「深い落ち込み」｜川虫を遠くへ流そう');
       });
@@ -515,7 +516,7 @@ class FishingApp {
     if (this.save.activeStage === 'mountain-stream' && !['edge','rapid','deep-pool'].includes(this.fishingSpot)) this.fishingSpot = 'rapid';
     if (port && !['harbor-wall','breakwater','river-mouth'].includes(this.fishingSpot)) this.fishingSpot = 'harbor-wall';
     if (this.fishingSpot === 'deep-pool' && !deepPoolUnlocked) this.fishingSpot = 'rapid';
-    this.scene?.setDeepPool(this.fishingSpot === 'deep-pool');
+    this.scene?.setFishingSpot(this.fishingSpot);
     const spotRow = this.save.activeStage === 'mountain-stream'
       ? `<div class="spot-row"><span>地点</span><button data-spot="edge" class="${this.fishingSpot === 'edge' ? 'selected' : ''}">岸際の淀み</button><button data-spot="rapid" class="${this.fishingSpot === 'rapid' ? 'selected' : ''}">白泡の瀬</button><button data-spot="deep-pool" class="${this.fishingSpot === 'deep-pool' ? 'selected' : ''}" ${deepPoolUnlocked ? '' : 'disabled'}>${deepPoolUnlocked ? '深い落ち込み' : '未調査'}</button></div>`
       : port
@@ -539,8 +540,8 @@ class FishingApp {
       </div>`;
     this.query('#dock').querySelectorAll<HTMLButtonElement>('[data-spot]').forEach((button) => button.addEventListener('click', () => {
       if (this.phase !== 'idle' || button.disabled) return;
-      this.fishingSpot = button.dataset.spot as FishingSpot;
-      this.scene?.setDeepPool(this.fishingSpot === 'deep-pool');
+      this.fishingSpot = button.dataset.spot as FishingSpotId;
+      this.scene?.setFishingSpot(this.fishingSpot);
       sfx('tap');
       this.renderFishing();
     }));
@@ -1093,7 +1094,7 @@ class FishingApp {
     this.save.activeStage = id;
     this.fishingSpot = id === 'tsukinami-port' ? 'harbor-wall' : 'rapid';
     this.scene?.setStage(id);
-    this.scene?.setDeepPool(false);
+    this.scene?.setFishingSpot(this.fishingSpot);
     sfx('tap');
     const hasArrivalStory = id === 'mountain-stream' && !this.hasFlag('stream-arrival-seen');
     const hasDeepPoolStory = id === 'mountain-stream' && this.hasFlag('deep-pool-open') && !this.hasFlag('deep-pool-clue-seen');
