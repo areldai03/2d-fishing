@@ -330,7 +330,7 @@ class FishingApp {
       const rewardLabel = gear.id === 'float-2' ? '第一章の調査報酬' : gear.id === 'rod-2' ? '第二章の大会報酬' : this.save.chapter < gear.unlockChapter ? `第${gear.unlockChapter}章で解禁` : '釣具店で購入';
       return `<button data-box-gear="${gear.id}" class="tacklebox-item ${equipped ? 'equipped' : ''} ${owned ? '' : 'locked'}" ${owned ? '' : 'disabled'}><div class="tacklebox-art"><img src="${gear.asset}" alt="${gear.name}"><i>Lv.${gear.level}</i></div><span><b>${gear.name}</b><small>${owned ? this.gearEffect(gear) : rewardLabel}</small></span><em>${equipped ? '装備中' : owned ? '装備する' : '未入手'}</em></button>`;
     }).join('')}</div></section>`).join('');
-    const baitInventory = (Object.keys(BAITS) as BaitId[]).map((baitId) => { const bait = BAITS[baitId]; const amount = bait.reusable ? '∞' : this.save.baitStock[baitId as keyof SaveData['baitStock']]; return `<span><i class="bait-pixel" data-bait-art="${baitId}"></i><b>${bait.name}</b><small>${amount}</small></span>`; }).join('');
+    const baitInventory = (Object.keys(BAITS) as BaitId[]).map((baitId) => { const bait = BAITS[baitId]; const amount = bait.reusable ? '∞' : this.save.baitStock[baitId as keyof SaveData['baitStock']]; return `<span><i class="bait-pixel"><img src="${bait.asset}" alt=""></i><b>${bait.name}</b><small>${amount}</small></span>`; }).join('');
     overlay.innerHTML = `<div class="tacklebox-dimmer"><section class="tacklebox-screen"><header><div><small>LAB TACKLE INVENTORY</small><h2>研究室の釣具箱</h2></div><button id="tacklebox-close" aria-label="釣具箱を閉じる">×</button></header><div class="tacklebox-status"><span>現在の調査装備</span><b>Lv.${tackleLevel}</b><small>${rarityCoverage}に遭遇補正</small></div>${inventory}<section class="tacklebox-baits"><h3>エサの在庫</h3><div>${baitInventory}</div></section><p class="tacklebox-note">所持している道具を選ぶと、その場で装備を変更できます。</p></section></div>`;
     overlay.querySelector('#tacklebox-close')?.addEventListener('click', () => { overlay.innerHTML = ''; sfx('tap'); });
     overlay.querySelectorAll<HTMLButtonElement>('[data-box-gear]').forEach((button) => button.addEventListener('click', () => {
@@ -424,14 +424,14 @@ class FishingApp {
       ? { src:'/assets/backgrounds/field-archive-pixel-v1.png', alt:'魚の観測資料が広がる机', eyebrow:'FIELD ARCHIVE', title:'魚類観測資料室' }
       : tab === 'shop'
         ? { src:'/assets/backgrounds/tackle-shop-pixel-v1.png', alt:'月波釣具店の店内', eyebrow:'TSUKINAMI TACKLE', title:'月波釣具店' }
-        : { src:'/assets/backgrounds/route-map-pixel-v1.png', alt:'東雲大学から川、渓流、月波港へ続く調査地図', eyebrow:'FIELD ROUTE', title:'月波川流域・調査地域図' };
+        : { src:'/assets/backgrounds/route-map-pixel-v2.png', alt:'東雲大学から川を経て渓流と月波港へ分岐する調査地図', eyebrow:'FIELD ROUTE', title:'月波川流域・調査地域図' };
     const image = this.query<HTMLImageElement>('#menu-scene-image');
     image.src = config.src;
     image.alt = config.alt;
     this.query('#menu-scene-caption').innerHTML = `<small>${config.eyebrow}</small><strong>${config.title}</strong>`;
     const pins = this.query('#map-pins');
     if (tab !== 'map') { pins.innerHTML = ''; return; }
-    pins.innerHTML = `<svg class="story-route-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d="M50 80 L50 58 C57 53 60 48 64 43 L82 52"></path><path d="M50 58 C58 44 68 27 77 15"></path></svg><div class="map-landmark university"><i></i><span>東雲大学<small>第七実験棟</small></span></div><div class="map-landmark shop"><i></i><span>月波釣具店<small>川沿い商店街</small></span></div><button data-map-stage="mountain-stream" class="map-pin stream ${this.save.unlockedStages.includes('mountain-stream') ? '' : 'locked'}"><i></i><span>青葉渓流<small>${this.save.unlockedStages.includes('mountain-stream') ? '上流・山道へ' : '未調査'}</small></span></button><button data-map-stage="campus-river" class="map-pin river"><i></i><span style="left:auto;right:31px;text-align:right">大学裏の川<small>研究室から徒歩3分</small></span></button><button data-map-stage="tsukinami-port" class="map-pin port ${this.save.unlockedStages.includes('tsukinami-port') ? '' : 'locked'}"><i></i><span style="left:auto;right:-4px;top:30px;text-align:right">月波港<small>${this.save.unlockedStages.includes('tsukinami-port') ? '下流・海岸線バス' : '未調査'}</small></span></button>`;
+    pins.innerHTML = `<div class="map-landmark university"><i></i><span>東雲大学<small>第七実験棟</small></span></div><div class="map-landmark shop"><i></i><span>月波釣具店<small>川沿い商店街</small></span></div><div class="map-landmark future"><i></i><span>山上観測広場<small>未調査｜古い観測標が残る</small></span></div><button data-map-stage="mountain-stream" class="map-pin stream ${this.save.unlockedStages.includes('mountain-stream') ? '' : 'locked'}"><i></i><span>青葉渓流<small>${this.save.unlockedStages.includes('mountain-stream') ? '上流バス → 山道' : '未調査'}</small></span></button><button data-map-stage="campus-river" class="map-pin river"><i></i><span>大学裏の川<small>研究室から徒歩3分</small></span></button><button data-map-stage="tsukinami-port" class="map-pin port ${this.save.unlockedStages.includes('tsukinami-port') ? '' : 'locked'}"><i></i><span>月波港<small>${this.save.unlockedStages.includes('tsukinami-port') ? '海岸線バス → 港' : '未調査'}</small></span></button>`;
     pins.querySelectorAll<HTMLButtonElement>('[data-map-stage]').forEach((button) => button.addEventListener('click', () => this.travelTo(button.dataset.mapStage as StageId)));
   }
 
@@ -1167,7 +1167,7 @@ class FishingApp {
       const locked = this.save.chapter < bait.unlockChapter;
       const stock = bait.reusable ? '永久' : `所持 ${this.save.baitStock[baitId as keyof SaveData['baitStock']]}個`;
       const price = locked ? '第一章で入荷' : bait.reusable ? '何度でも使用可' : `${gold}${bait.price} G / ${bait.bundle}個`;
-      return `<button data-buy-bait="${baitId}" class="bait-item ${bait.reusable ? 'reusable' : ''}" ${locked || bait.reusable ? 'disabled' : ''}><span class="bait-pixel" data-bait-art="${baitId}"></span><span><b>${bait.name}</b><small>${bait.description}</small><em>${stock}</em></span><strong>${price}</strong></button>`;
+      return `<button data-buy-bait="${baitId}" class="bait-item ${bait.reusable ? 'reusable' : ''}" ${locked || bait.reusable ? 'disabled' : ''}><span class="bait-pixel"><img src="${bait.asset}" alt=""></span><span><b>${bait.name}</b><small>${bait.description}</small><em>${stock}</em></span><strong>${price}</strong></button>`;
     }).join('');
     this.query('#dock').innerHTML = `<div class="shop-head"><div class="shopkeeper"><span>釣</span></div><div><small>月波釣具店　店主・鵜沢</small><p>「道具は腕を助ける。でも、魚を見るのは君だよ」</p></div><div class="shop-tools"><strong class="shop-wallet">${gold}<span id="money">${this.save.money.toLocaleString()}</span><small>G</small></strong><button id="shop-tackle-box" class="tiny-button">所持品・装備</button></div></div>
       <button id="sell" class="sell-button" ${this.save.basket.length ? '' : 'disabled'}><span>釣果をまとめて売る <small>${this.save.basket.length}匹</small></span><strong>${gold}+ ${basketValue} G</strong></button>
