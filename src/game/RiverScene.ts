@@ -1,13 +1,14 @@
 import Phaser from 'phaser';
 import type { StageId } from '../types';
 import { FISHING_BACKGROUND_ASSETS, fishingSpotVisual, type FishingSpotId } from '../data/fishingSpots';
+import { GEAR } from '../data/equipment';
 
 export type WaterMood = 'idle' | 'cast' | 'waiting' | 'nibble' | 'bite' | 'fight' | 'splash';
 
 export class RiverScene extends Phaser.Scene {
   private stageId: StageId = 'campus-river';
   private mood: WaterMood = 'idle';
-  private bobber?: Phaser.GameObjects.Container;
+  private bobber?: Phaser.GameObjects.Image;
   private line?: Phaser.GameObjects.Graphics;
   private ripples: Phaser.GameObjects.Ellipse[] = [];
   private fishShadow?: Phaser.GameObjects.Ellipse;
@@ -16,11 +17,16 @@ export class RiverScene extends Phaser.Scene {
   private castX = 205;
   private castY = 215;
   private fishingSpot: FishingSpotId = 'rapid';
+  private rodId = 'rod-1';
+  private floatId = 'float-1';
+  private bobberBaseAngle = 72;
 
   constructor() { super('river'); }
 
   preload(): void {
     FISHING_BACKGROUND_ASSETS.forEach(({ key, asset }) => this.load.image(key, asset));
+    GEAR.filter((gear) => (gear.category === 'rod' || gear.category === 'float') && gear.asset)
+      .forEach((gear) => this.load.image(`tackle-${gear.id}`, gear.asset!));
   }
 
   create(): void {
@@ -36,7 +42,7 @@ export class RiverScene extends Phaser.Scene {
     if (this.bobber) {
       const force = this.mood === 'bite' ? 11 : this.mood === 'nibble' ? 4 : 1.6;
       this.bobber.y += Math.sin(time / (this.mood === 'bite' ? 80 : 260)) * force * .075;
-      if (this.mood === 'bite') this.bobber.angle = Math.sin(time / 65) * 14;
+      this.bobber.angle = this.bobberBaseAngle + (this.mood === 'bite' ? Math.sin(time / 65) * 18 : Math.sin(time / 380) * 2);
     }
     if (this.fishShadow && this.mood === 'fight') {
       this.fishShadow.x = this.castX + Math.sin(time / 260) * 72;
@@ -76,6 +82,15 @@ export class RiverScene extends Phaser.Scene {
     this.redrawWorld();
   }
 
+  setEquipment(rodId: string, floatId: string): void {
+    const nextRod = GEAR.some((gear) => gear.id === rodId && gear.category === 'rod') ? rodId : 'rod-1';
+    const nextFloat = GEAR.some((gear) => gear.id === floatId && gear.category === 'float') ? floatId : 'float-1';
+    if (this.rodId === nextRod && this.floatId === nextFloat) return;
+    this.rodId = nextRod;
+    this.floatId = nextFloat;
+    this.redrawWorld();
+  }
+
   private redrawWorld(): void {
     this.children.removeAll(true);
     this.waterLines = [];
@@ -92,7 +107,7 @@ export class RiverScene extends Phaser.Scene {
     const visible = mood !== 'idle' && mood !== 'cast';
     this.bobber.setVisible(visible).setPosition(this.castX, this.castY);
     this.line.setVisible(visible).clear();
-    if (visible) this.line.lineStyle(1.5, 0xfff1c5, .9).lineBetween(372, 104, this.castX, this.castY - 9);
+    if (visible) this.line.lineStyle(1.5, 0xfff1c5, .9).lineBetween(389, 91, this.castX, this.castY - 9);
     this.ripples.forEach((r) => r.setPosition(this.castX, this.castY + 12).setVisible(visible));
     this.fishShadow.setPosition(this.castX, this.castY + 32);
     this.fishShadow.setVisible(mood === 'fight');
@@ -148,14 +163,11 @@ export class RiverScene extends Phaser.Scene {
     }
     this.add.rectangle(0, 293, 390, 7, 0x0b2333, .72).setOrigin(0).setDepth(9);
 
+    this.add.image(342, 112, `tackle-${this.rodId}`).setDisplaySize(112, 54).setDepth(6).setAngle(-2);
     this.line = this.add.graphics().setDepth(7).setVisible(false);
     this.fishShadow = this.add.ellipse(205, 240, 96, 18, 0x071c29, .3).setDepth(3).setVisible(false);
-    this.bobber = this.add.container(205, 215, [
-      this.add.rectangle(0, -14, 4, 18, 0xf3eee0),
-      this.add.rectangle(0, -21, 4, 10, 0xe65645),
-      this.add.ellipse(0, 0, 14, 25, 0xf3eee0).setStrokeStyle(3, 0x172c37),
-      this.add.rectangle(0, -5, 11, 8, 0xe65645),
-    ]).setDepth(8).setVisible(false);
+    this.bobberBaseAngle = this.floatId === 'float-1' ? 76 : 68;
+    this.bobber = this.add.image(205, 215, `tackle-${this.floatId}`).setDisplaySize(30, 16).setAngle(this.bobberBaseAngle).setDepth(8).setVisible(false);
     for (let i = 0; i < 3; i++) this.ripples.push(this.add.ellipse(205, 328, 38, 12).setStrokeStyle(2, visual.rippleColor).setDepth(5).setVisible(false));
     const labelWidth = Math.min(236, Math.max(174, visual.title.length * 17 + 28));
     this.add.rectangle(10, 10, labelWidth, 49, 0x091c28, .78).setOrigin(0).setStrokeStyle(1, visual.labelBorder, .8).setDepth(9);

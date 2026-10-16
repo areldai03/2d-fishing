@@ -67,6 +67,7 @@ class FishingApp {
         this.scene = scene;
         this.scene.setStage(this.save.activeStage);
         this.scene.setFishingSpot(this.fishingSpot);
+        this.scene.setEquipment(this.save.equipped.rod, this.save.equipped.float);
         clearInterval(wait);
       }
     }, 50);
@@ -241,9 +242,6 @@ class FishingApp {
     sfx('tap');
     this.query('#lab-bubble').classList.add('hidden');
     const categories: GearCategory[] = ['rod','float','hook'];
-    const equippedGear = categories.map((category) => GEAR.find((gear) => gear.id === this.save.equipped[category])!);
-    const tackleLevel = Math.max(...equippedGear.map((gear) => gear.level));
-    const rarityCoverage = tackleLevel >= 3 ? '★1〜4' : tackleLevel >= 2 ? '★1〜3' : '★1中心';
     const overlay = this.query('#overlay');
     const inventory = categories.map((category) => `<section class="tacklebox-group"><h3><span>${CATEGORY_NAMES[category]}</span><small>${GEAR.filter((gear) => gear.category === category && this.save.ownedGear.includes(gear.id)).length} / ${GEAR.filter((gear) => gear.category === category).length}</small></h3><div class="tacklebox-grid">${GEAR.filter((gear) => gear.category === category).map((gear) => {
       const owned = this.save.ownedGear.includes(gear.id);
@@ -252,13 +250,14 @@ class FishingApp {
       return `<button data-box-gear="${gear.id}" class="tacklebox-item ${equipped ? 'equipped' : ''} ${owned ? '' : 'locked'}" ${owned ? '' : 'disabled'}><div class="tacklebox-art"><img src="${gear.asset}" alt="${gear.name}"><i>Lv.${gear.level}</i></div><span><b>${gear.name}</b><small>${owned ? this.gearEffect(gear) : rewardLabel}</small></span><em>${equipped ? '装備中' : owned ? '装備する' : '未入手'}</em></button>`;
     }).join('')}</div></section>`).join('');
     const baitInventory = (Object.keys(BAITS) as BaitId[]).map((baitId) => { const bait = BAITS[baitId]; const amount = bait.reusable ? '∞' : this.save.baitStock[baitId as keyof SaveData['baitStock']]; return `<span><i class="bait-pixel"><img src="${bait.asset}" alt=""></i><b>${bait.name}</b><small>${amount}</small></span>`; }).join('');
-    overlay.innerHTML = `<div class="tacklebox-dimmer"><section class="tacklebox-screen"><header><div><small>LAB TACKLE INVENTORY</small><h2>研究室の釣具箱</h2></div><button id="tacklebox-close" aria-label="釣具箱を閉じる">×</button></header><div class="tacklebox-status"><span>現在の調査装備</span><b>Lv.${tackleLevel}</b><small>${rarityCoverage}に遭遇補正</small></div>${inventory}<section class="tacklebox-baits"><h3>エサの在庫</h3><div>${baitInventory}</div></section><p class="tacklebox-note">所持している道具を選ぶと、その場で装備を変更できます。</p></section></div>`;
+    overlay.innerHTML = `<div class="tacklebox-dimmer"><section class="tacklebox-screen"><header><div><small>LAB TACKLE INVENTORY</small><h2>研究室の釣具箱</h2></div><button id="tacklebox-close" aria-label="釣具箱を閉じる">×</button></header>${inventory}<section class="tacklebox-baits"><h3>エサの在庫</h3><div>${baitInventory}</div></section><p class="tacklebox-note">所持している道具を選ぶと、その場で装備を変更できます。</p></section></div>`;
     overlay.querySelector('#tacklebox-close')?.addEventListener('click', () => { overlay.innerHTML = ''; sfx('tap'); });
     overlay.querySelectorAll<HTMLButtonElement>('[data-box-gear]').forEach((button) => button.addEventListener('click', () => {
       const gear = GEAR.find((item) => item.id === button.dataset.boxGear);
       if (!gear || !this.save.ownedGear.includes(gear.id)) return;
       buyOrEquip(this.save, gear.id);
       persistSave(this.save);
+      this.scene?.setEquipment(this.save.equipped.rod, this.save.equipped.float);
       this.openTackleBox();
       this.toast(`${gear.name}を装備した`);
     }));
@@ -505,10 +504,8 @@ class FishingApp {
       persistSave(this.save);
     }
     const equipped = Object.fromEntries((['rod','float','hook'] as GearCategory[]).map((category) => [category, GEAR.find((gear) => gear.id === this.save.equipped[category])!])) as Record<GearCategory, typeof GEAR[number]>;
-    const tackleLevel = Math.max(equipped.rod.level, equipped.float.level, equipped.hook.level);
     const rodEffect = Math.round((1 - (1 - equipped.rod.control * 1.05)) * 100);
     const floatBonus = Math.round(equipped.float.control * 900);
-    const rarityCoverage = tackleLevel >= 3 ? '★1〜4に遭遇補正' : tackleLevel >= 2 ? '★1〜3に遭遇補正' : '★1に遭遇補正';
     const hookBonus = Math.round(equipped.hook.control * 900);
     const deepPoolUnlocked = this.hasFlag('deep-pool-clue-seen');
     const port = this.save.activeStage === 'tsukinami-port';
@@ -517,6 +514,7 @@ class FishingApp {
     if (port && !['harbor-wall','breakwater','river-mouth'].includes(this.fishingSpot)) this.fishingSpot = 'harbor-wall';
     if (this.fishingSpot === 'deep-pool' && !deepPoolUnlocked) this.fishingSpot = 'rapid';
     this.scene?.setFishingSpot(this.fishingSpot);
+    this.scene?.setEquipment(this.save.equipped.rod, this.save.equipped.float);
     const spotRow = this.save.activeStage === 'mountain-stream'
       ? `<div class="spot-row"><span>地点</span><button data-spot="edge" class="${this.fishingSpot === 'edge' ? 'selected' : ''}">岸際の淀み</button><button data-spot="rapid" class="${this.fishingSpot === 'rapid' ? 'selected' : ''}">白泡の瀬</button><button data-spot="deep-pool" class="${this.fishingSpot === 'deep-pool' ? 'selected' : ''}" ${deepPoolUnlocked ? '' : 'disabled'}>${deepPoolUnlocked ? '深い落ち込み' : '未調査'}</button></div>`
       : port
@@ -529,7 +527,7 @@ class FishingApp {
       ${spotRow}
       ${tideStrip}
       <div class="bait-row"><span>エサ</span>${baits.map((bait) => { const data = BAITS[bait]; const available = baitAvailable(this.save, bait); const count = data.reusable ? '∞' : `×${this.save.baitStock[bait as keyof SaveData['baitStock']]}`; return `<button data-bait="${bait}" class="chip ${bait === this.save.bait ? 'selected' : ''} ${available ? '' : 'empty'}" ${available ? '' : 'disabled'}><b>${bait}</b><small>${this.save.chapter < data.unlockChapter ? '未解禁' : count}</small></button>`; }).join('')}</div>
-      <div class="tackle-strip" data-tier-note="調査装備 Lv.${tackleLevel}｜${rarityCoverage}"><span><i>竿</i>${equipped.rod.name}<small>${rodEffect ? `張力 -${rodEffect}%` : '標準'}</small></span><span><i>浮</i>${equipped.float.name}<small>${floatBonus ? `合わせ +${floatBonus}ms` : '標準'}</small></span><span><i>針</i>${equipped.hook.name}<small>${hookBonus ? `+${hookBonus}ms・疲労UP` : '標準'}</small></span></div>
+      <div class="tackle-strip"><span><i>竿</i>${equipped.rod.name}<small>${rodEffect ? `張力 -${rodEffect}%` : '標準'}</small></span><span><i>浮</i>${equipped.float.name}<small>${floatBonus ? `合わせ +${floatBonus}ms` : '標準'}</small></span><span><i>針</i>${equipped.hook.name}<small>${hookBonus ? `+${hookBonus}ms・疲労UP` : '標準'}</small></span></div>
       <div class="cast-panel" id="cast-panel">
         <div class="phase-copy"><small id="phase-label">CAST</small><strong id="phase-title">狙う距離を決めよう</strong><p id="phase-help">ボタンでメーターを動かし、もう一度押してキャスト</p></div>
         <div class="cast-meter" id="cast-meter"><i style="left:${this.castPower*100}%"></i></div>
@@ -970,6 +968,7 @@ class FishingApp {
     const close = (equip: boolean) => {
       this.save.equipped[gear.category] = equip ? gear.id : previousGearId;
       persistSave(this.save);
+      this.scene?.setEquipment(this.save.equipped.rod, this.save.equipped.float);
       overlay.innerHTML = '';
       sfx(equip ? 'buy' : 'tap');
       onClose?.();
@@ -1033,7 +1032,7 @@ class FishingApp {
     const basketValue = this.save.basket.reduce((sum, item) => sum + item.value, 0);
     const visibleGear = GEAR;
     const gold = '<i class="gold-coin" aria-hidden="true"></i>';
-    const baitShelf = (Object.keys(BAITS) as BaitId[]).map((baitId) => {
+    const baitShelf = (Object.keys(BAITS) as BaitId[]).filter((baitId) => !BAITS[baitId].reusable).map((baitId) => {
       const bait = BAITS[baitId];
       const locked = this.save.chapter < bait.unlockChapter;
       const stock = bait.reusable ? '永久' : `所持 ${this.save.baitStock[baitId as keyof SaveData['baitStock']]}個`;
@@ -1043,7 +1042,7 @@ class FishingApp {
     this.query('#dock').innerHTML = `<div class="shop-head"><div class="shopkeeper"><span>釣</span></div><div><small>月波釣具店　店主・鵜沢</small><p>「道具は腕を助ける。でも、魚を見るのは君だよ」</p></div><div class="shop-tools"><strong class="shop-wallet">${gold}<span id="money">${this.save.money.toLocaleString()}</span><small>G</small></strong><button id="shop-tackle-box" class="tiny-button">所持品・装備</button></div></div>
       <button id="sell" class="sell-button" ${this.save.basket.length ? '' : 'disabled'}><span>釣果をまとめて売る <small>${this.save.basket.length}匹</small></span><strong>${gold}+ ${basketValue} G</strong></button>
       <section class="bait-shop"><h3>エサ・仕掛け <small>エサは着水時に1個消費</small></h3><div class="bait-shelf">${baitShelf}</div></section>
-      <p class="tackle-level-guide">釣具を一つでもLv.2へ上げると★2・★3、Lv.3で★4の遭遇点が増える。</p><div class="gear-grid">${(['rod','float','hook'] as GearCategory[]).map((category) => `<section><h3>${CATEGORY_NAMES[category]}</h3>${visibleGear.filter((gear) => gear.category === category).map((gear) => { const owned = this.save.ownedGear.includes(gear.id); const equipped = this.save.equipped[category] === gear.id; const locked = this.save.chapter < gear.unlockChapter; const unlockLabel = gear.id === 'float-2' ? '第一章報酬' : gear.id === 'rod-2' ? '第二章報酬' : ['序章','第一章','第二章','第三章','第四章'][gear.unlockChapter] ?? `第${gear.unlockChapter}章`; const art = `<img src="${gear.asset}" alt="">`; return `<button data-gear="${gear.id}" class="gear ${equipped?'equipped':''} ${locked?'locked':''}" ${locked?'disabled':''}><div class="gear-icon">${art}<i>Lv.${gear.level}</i></div><span><b>${gear.name}</b><small>${gear.description}</small></span><em>${locked?unlockLabel:equipped?'装備中':owned?'装備する':`${gold}${gear.price} G`}</em></button>`; }).join('')}</section>`).join('')}</div>`;
+      <div class="gear-grid">${(['rod','float','hook'] as GearCategory[]).map((category) => `<section><h3>${CATEGORY_NAMES[category]}</h3>${visibleGear.filter((gear) => gear.category === category).map((gear) => { const owned = this.save.ownedGear.includes(gear.id); const equipped = this.save.equipped[category] === gear.id; const locked = this.save.chapter < gear.unlockChapter; const unlockLabel = gear.id === 'float-2' ? '第一章報酬' : gear.id === 'rod-2' ? '第二章報酬' : ['序章','第一章','第二章','第三章','第四章'][gear.unlockChapter] ?? `第${gear.unlockChapter}章`; const art = `<img src="${gear.asset}" alt="">`; return `<button data-gear="${gear.id}" class="gear ${equipped?'equipped':''} ${locked?'locked':''}" ${locked?'disabled':''}><div class="gear-icon">${art}<i>Lv.${gear.level}</i></div><span><b>${gear.name}</b><small>${gear.description}</small></span><em>${locked?unlockLabel:equipped?'装備中':owned?'装備する':`${gold}${gear.price} G`}</em></button>`; }).join('')}</section>`).join('')}</div>`;
     this.root.querySelector('#shop-tackle-box')?.addEventListener('click', () => this.openTackleBox());
     this.root.querySelector('#sell')?.addEventListener('click', () => { const earned = sellBasket(this.save); persistSave(this.save); this.updateMoney(); sfx('buy'); this.toast(`${earned} G で買い取ってもらった`); this.renderShop(); });
     this.query('#dock').querySelectorAll<HTMLButtonElement>('[data-buy-bait]').forEach((button) => button.addEventListener('click', () => {
@@ -1066,6 +1065,7 @@ class FishingApp {
       if (result === 'locked') return this.toast('物語を進めると入荷します');
       persistSave(this.save);
       this.updateMoney();
+      this.scene?.setEquipment(this.save.equipped.rod, this.save.equipped.float);
       sfx('buy');
       if (result === 'bought') return this.showGearReward(gear, previousGear, 'NEW TACKLE｜月波釣具店');
       this.toast('装備を変更した');
