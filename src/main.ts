@@ -6,7 +6,7 @@ import { AquariumView } from './game/AquariumView';
 import { loadSave, persistSave, eraseSave } from './core/save';
 import { AQUARIUM_CAPACITY, aquariumKindForFish, aquariumResidents, moveCatchToAquarium, returnResidentToBasket } from './core/aquarium';
 import { chooseFish, completeTackleShopVisit, makeCatch, portSurveyReady, recommendedTackleLevel, recordCatch, releaseCatch, sellBasket, streamSurveyReady } from './core/fishing';
-import { biteWindowMs, canLandFish, createFightState, fightDifficultyRating, landingTolerance, specimenPower, stepFight, type FightState } from './core/fight';
+import { biteWindowMs, canLandFish, createFightState, landingTolerance, specimenPower, stepFight, type FightState } from './core/fight';
 import { isLurePullOnCurrent, lureWindow, stepLureMarker, type PortTide } from './core/lure';
 import { baitAvailable, buyBait, buyOrEquip, consumeBait } from './core/shop';
 import { FISH, FISH_LIST } from './data/fish';
@@ -123,6 +123,7 @@ class FishingApp {
     };
     this.root.querySelectorAll<HTMLButtonElement>('[data-lab-spot]').forEach((button) => button.addEventListener('click', () => {
       if (button.dataset.labSpot === 'tank') return this.openAquarium();
+      if (button.dataset.labSpot === 'tackle') return this.openTackleBox();
       const note = labNotes[button.dataset.labSpot ?? ''];
       if (note) this.showLabBubble(note[0], note[1]);
     }));
@@ -315,6 +316,33 @@ class FishingApp {
     }));
   }
 
+  private openTackleBox(): void {
+    sfx('tap');
+    this.query('#lab-bubble').classList.add('hidden');
+    const categories: GearCategory[] = ['rod','float','hook'];
+    const equippedGear = categories.map((category) => GEAR.find((gear) => gear.id === this.save.equipped[category])!);
+    const tackleLevel = Math.max(...equippedGear.map((gear) => gear.level));
+    const rarityCoverage = tackleLevel >= 3 ? '★1〜4' : tackleLevel >= 2 ? '★1〜3' : '★1中心';
+    const overlay = this.query('#overlay');
+    const inventory = categories.map((category) => `<section class="tacklebox-group"><h3><span>${CATEGORY_NAMES[category]}</span><small>${GEAR.filter((gear) => gear.category === category && this.save.ownedGear.includes(gear.id)).length} / ${GEAR.filter((gear) => gear.category === category).length}</small></h3><div class="tacklebox-grid">${GEAR.filter((gear) => gear.category === category).map((gear) => {
+      const owned = this.save.ownedGear.includes(gear.id);
+      const equipped = this.save.equipped[category] === gear.id;
+      const rewardLabel = gear.id === 'float-2' ? '第一章の調査報酬' : gear.id === 'rod-2' ? '第二章の大会報酬' : this.save.chapter < gear.unlockChapter ? `第${gear.unlockChapter}章で解禁` : '釣具店で購入';
+      return `<button data-box-gear="${gear.id}" class="tacklebox-item ${equipped ? 'equipped' : ''} ${owned ? '' : 'locked'}" ${owned ? '' : 'disabled'}><div class="tacklebox-art"><img src="${gear.asset}" alt="${gear.name}"><i>Lv.${gear.level}</i></div><span><b>${gear.name}</b><small>${owned ? this.gearEffect(gear) : rewardLabel}</small></span><em>${equipped ? '装備中' : owned ? '装備する' : '未入手'}</em></button>`;
+    }).join('')}</div></section>`).join('');
+    const baitInventory = (Object.keys(BAITS) as BaitId[]).map((baitId) => { const bait = BAITS[baitId]; const amount = bait.reusable ? '∞' : this.save.baitStock[baitId as keyof SaveData['baitStock']]; return `<span><i class="bait-pixel" data-bait-art="${baitId}"></i><b>${bait.name}</b><small>${amount}</small></span>`; }).join('');
+    overlay.innerHTML = `<div class="tacklebox-dimmer"><section class="tacklebox-screen"><header><div><small>LAB TACKLE INVENTORY</small><h2>研究室の釣具箱</h2></div><button id="tacklebox-close" aria-label="釣具箱を閉じる">×</button></header><div class="tacklebox-status"><span>現在の調査装備</span><b>Lv.${tackleLevel}</b><small>${rarityCoverage}に遭遇補正</small></div>${inventory}<section class="tacklebox-baits"><h3>エサの在庫</h3><div>${baitInventory}</div></section><p class="tacklebox-note">所持している道具を選ぶと、その場で装備を変更できます。</p></section></div>`;
+    overlay.querySelector('#tacklebox-close')?.addEventListener('click', () => { overlay.innerHTML = ''; sfx('tap'); });
+    overlay.querySelectorAll<HTMLButtonElement>('[data-box-gear]').forEach((button) => button.addEventListener('click', () => {
+      const gear = GEAR.find((item) => item.id === button.dataset.boxGear);
+      if (!gear || !this.save.ownedGear.includes(gear.id)) return;
+      buyOrEquip(this.save, gear.id);
+      persistSave(this.save);
+      this.openTackleBox();
+      this.toast(`${gear.name}を装備した`);
+    }));
+  }
+
   private activateTab(tab: string): void {
     this.currentTab = tab;
     const activeTab = tab === 'memo' || tab === 'story-log' ? 'home' : tab;
@@ -396,14 +424,14 @@ class FishingApp {
       ? { src:'/assets/backgrounds/field-archive-pixel-v1.png', alt:'魚の観測資料が広がる机', eyebrow:'FIELD ARCHIVE', title:'魚類観測資料室' }
       : tab === 'shop'
         ? { src:'/assets/backgrounds/tackle-shop-pixel-v1.png', alt:'月波釣具店の店内', eyebrow:'TSUKINAMI TACKLE', title:'月波釣具店' }
-        : { src:'/assets/backgrounds/route-map-pixel-v1.png', alt:'大学から渓流へ続くルートマップ', eyebrow:'FIELD ROUTE', title:'調査地域図' };
+        : { src:'/assets/backgrounds/route-map-pixel-v1.png', alt:'東雲大学から川、渓流、月波港へ続く調査地図', eyebrow:'FIELD ROUTE', title:'月波川流域・調査地域図' };
     const image = this.query<HTMLImageElement>('#menu-scene-image');
     image.src = config.src;
     image.alt = config.alt;
     this.query('#menu-scene-caption').innerHTML = `<small>${config.eyebrow}</small><strong>${config.title}</strong>`;
     const pins = this.query('#map-pins');
     if (tab !== 'map') { pins.innerHTML = ''; return; }
-    pins.innerHTML = `<button data-map-stage="tsukinami-port" class="map-pin port ${this.save.unlockedStages.includes('tsukinami-port') ? '' : 'locked'}"><i></i><span>月波港<small>${this.save.unlockedStages.includes('tsukinami-port') ? '河口・バス20分' : '未調査'}</small></span></button><button data-map-stage="mountain-stream" class="map-pin stream ${this.save.unlockedStages.includes('mountain-stream') ? '' : 'locked'}"><i></i><span>青葉渓流<small>${this.save.unlockedStages.includes('mountain-stream') ? '山道・バス2本' : '未調査'}</small></span></button><button data-map-stage="campus-river" class="map-pin river"><i></i><span>大学裏の川<small>研究室から徒歩3分</small></span></button>`;
+    pins.innerHTML = `<svg class="story-route-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d="M50 80 L50 58 C57 53 60 48 64 43 L82 52"></path><path d="M50 58 C58 44 68 27 77 15"></path></svg><div class="map-landmark university"><i></i><span>東雲大学<small>第七実験棟</small></span></div><div class="map-landmark shop"><i></i><span>月波釣具店<small>川沿い商店街</small></span></div><button data-map-stage="mountain-stream" class="map-pin stream ${this.save.unlockedStages.includes('mountain-stream') ? '' : 'locked'}"><i></i><span>青葉渓流<small>${this.save.unlockedStages.includes('mountain-stream') ? '上流・山道へ' : '未調査'}</small></span></button><button data-map-stage="campus-river" class="map-pin river"><i></i><span>大学裏の川<small>研究室から徒歩3分</small></span></button><button data-map-stage="tsukinami-port" class="map-pin port ${this.save.unlockedStages.includes('tsukinami-port') ? '' : 'locked'}"><i></i><span>月波港<small>${this.save.unlockedStages.includes('tsukinami-port') ? '下流・海岸線バス' : '未調査'}</small></span></button>`;
     pins.querySelectorAll<HTMLButtonElement>('[data-map-stage]').forEach((button) => button.addEventListener('click', () => this.travelTo(button.dataset.mapStage as StageId)));
   }
 
@@ -818,10 +846,7 @@ class FishingApp {
     dock.classList.remove('landing-mode');
     dock.scrollTop = 0;
     const pullTell = this.pendingPower >= 1.18 ? '竿が深くしなる。強い走りに備えよう' : this.pendingPower >= 1.02 ? '確かな重みがある。動きを見て慎重に寄せよう' : '細かな振動が伝わる。リズムよく寄せよう';
-    const rodControl = GEAR.find((gear) => gear.id === this.save.equipped.rod)?.control ?? 0;
-    const hookControl = GEAR.find((gear) => gear.id === this.save.equipped.hook)?.control ?? 0;
-    const rating = fightDifficultyRating(this.pendingFish, this.pendingPower, rodControl, hookControl);
-    this.setCopy('FIGHT',`何かが掛かった！　${'◆'.repeat(rating)}${'◇'.repeat(5-rating)}`,pullTell);
+    this.setCopy('FIGHT','何かが掛かった！',pullTell);
     this.setAction('長押しで巻く');
     this.query<HTMLButtonElement>('#action').classList.remove('waiting');
     this.fightFrame = requestAnimationFrame((time) => this.updateFight(time));
@@ -930,7 +955,7 @@ class FishingApp {
     const catchActions = iwanaChallengeEvent
       ? `<button id="catch-keep" class="primary">傷を記録する</button>`
       : `<div class="catch-actions"><button id="catch-aquarium" class="catch-secondary">${waterLabel}へ入れる</button><button id="catch-keep" class="primary">記録して持ち帰る</button></div>`;
-    overlay.innerHTML = `<div class="catch-dimmer"><section class="catch-card ${item.rank === '巨大' ? 'giant' : ''}"><div class="catch-rays"></div><p class="catch-label">${tags.map((tag) => `<span>${tag}</span>`).join('')}</p><div class="catch-fish-stage"><img src="${fish.sprite}" alt="${fish.name}"></div><small>希少度 ${'★'.repeat(fish.rarity)}${'☆'.repeat(4-fish.rarity)}</small><h2>${fish.name}</h2><div class="catch-size"><strong>${item.size.toFixed(1)}</strong> cm <i>${item.rank}サイズ</i></div><p>${disposition}</p>${catchActions}</section></div>`;
+    overlay.innerHTML = `<div class="catch-dimmer"><section class="catch-card ${item.rank === '巨大' ? 'giant' : ''}"><div class="catch-rays"></div><p class="catch-label">${tags.map((tag) => `<span>${tag}</span>`).join('')}</p><div class="catch-fish-stage"><img src="${fish.sprite}" alt="${fish.name}"></div><div class="catch-rarity-strip"><span>SPECIES RARITY</span><b>${'★'.repeat(fish.rarity)}${'☆'.repeat(4-fish.rarity)}</b></div><h2>${fish.name}</h2><div class="catch-size"><strong>${item.size.toFixed(1)}</strong> cm <i>${item.rank}サイズ</i></div><p>${disposition}</p>${catchActions}</section></div>`;
     const finishCatch = (tankMessage?: string) => {
       overlay.innerHTML = '';
       const chapterStarted = previousChapter === 0 && this.save.chapter === 1;
@@ -1127,17 +1152,15 @@ class FishingApp {
     const record = this.save.records[fish.id];
     const rankLabels = ['小','中','大','巨大'];
     const distanceNames = { near:'岸際・浅場', middle:'流れの中央', far:'沖・深場', any:'全域' } as const;
-    const difficulty = fightDifficultyRating(fish);
     this.query('#dock').innerHTML = `<div class="section-heading"><div><small>FIELD NOTE</small><h2>魚類観測図鑑</h2></div><div class="completion"><b>${Math.round(found/FISH_LIST.length*100)}%</b><span>${found} / ${FISH_LIST.length} 種</span></div></div>
       <div class="book-layout"><div class="fish-list">${FISH_LIST.map((item, index) => { const known = this.save.records[item.id]; return `<button data-fish="${item.id}" class="${item.id===fish.id?'selected':''} ${known?'':'unknown'}"><span>${known ? String(index+1).padStart(2,'0') : '??'}</span><b>${known ? item.name : '未観測'}</b><small>${known ? `${known.maxSize.toFixed(1)}cm` : '——'}</small></button>`; }).join('')}</div>
-      <article class="fish-entry ${record?'':'silhouette'}"><div class="entry-visual">${record ? `<img src="${fish.sprite}" alt="${fish.name}"><span aria-label="魚種の希少度">${'★'.repeat(fish.rarity)}${'☆'.repeat(4-fish.rarity)}</span>` : '<div class="unknown-specimen" aria-label="未観測の魚"><i>?</i><b></b><b></b></div>'}</div><small>${record ? `NO.${String(FISH_LIST.indexOf(fish)+1).padStart(2,'0')}` : 'UNREGISTERED'}</small><h3>${record ? fish.name : '未観測'}</h3><p>${record ? fish.description : '釣り上げるまで、名前も大きさも分からない。水面の気配を頼りに探してみよう。'}</p>${record ? `<dl><div><dt>希少度</dt><dd>${'★'.repeat(fish.rarity)}${'☆'.repeat(4-fish.rarity)} <small>地域内での出会いにくさ</small></dd></div><div><dt>推奨釣具</dt><dd>調査装備 Lv.${recommendedTackleLevel(fish.rarity)} <small>満たすと遭遇点UP</small></dd></div><div><dt>生息域</dt><dd>${fish.habitat.map((id) => STAGES[id].name).join('・')}</dd></div><div><dt>サイズ域</dt><dd>${fish.minSize}–${fish.maxSize} cm</dd></div><div><dt>好物</dt><dd>${fish.preferredBaits.join('・')}</dd></div><div><dt>狙い目</dt><dd>${distanceNames[fish.distancePreference]}</dd></div><div><dt>手強さ</dt><dd class="difficulty">${'◆'.repeat(difficulty)}${'◇'.repeat(5-difficulty)} <small>標準個体・初期装備</small></dd></div><div><dt>最大記録</dt><dd>${record.maxSize.toFixed(1)} cm</dd></div><div><dt>捕獲数</dt><dd>${record.count} 匹</dd></div><div><dt>初観測</dt><dd>${STAGES[record.firstStage].name}</dd></div></dl><div class="rank-stamps">${rankLabels.map((rank) => `<i class="${record.ranks.includes(rank as never)?'on':''}">${rank}</i>`).join('')}</div>` : ''}</article></div>`;
+      <article class="fish-entry ${record?'':'silhouette'}"><div class="entry-visual">${record ? `<img src="${fish.sprite}" alt="${fish.name}"><span aria-label="魚種の希少度">${'★'.repeat(fish.rarity)}${'☆'.repeat(4-fish.rarity)}</span>` : '<div class="unknown-specimen" aria-label="未観測の魚"><i>?</i><b></b><b></b></div>'}</div><small>${record ? `NO.${String(FISH_LIST.indexOf(fish)+1).padStart(2,'0')}` : 'UNREGISTERED'}</small><h3>${record ? fish.name : '未観測'}</h3><p>${record ? fish.description : '釣り上げるまで、名前も大きさも分からない。水面の気配を頼りに探してみよう。'}</p>${record ? `<dl><div><dt>希少度</dt><dd>${'★'.repeat(fish.rarity)}${'☆'.repeat(4-fish.rarity)} <small>地域内での出会いにくさ</small></dd></div><div><dt>推奨釣具</dt><dd>調査装備 Lv.${recommendedTackleLevel(fish.rarity)} <small>満たすと遭遇点UP</small></dd></div><div><dt>生息域</dt><dd>${fish.habitat.map((id) => STAGES[id].name).join('・')}</dd></div><div><dt>サイズ域</dt><dd>${fish.minSize}–${fish.maxSize} cm</dd></div><div><dt>好物</dt><dd>${fish.preferredBaits.join('・')}</dd></div><div><dt>狙い目</dt><dd>${distanceNames[fish.distancePreference]}</dd></div><div><dt>最大記録</dt><dd>${record.maxSize.toFixed(1)} cm</dd></div><div><dt>捕獲数</dt><dd>${record.count} 匹</dd></div><div><dt>初観測</dt><dd>${STAGES[record.firstStage].name}</dd></div></dl><div class="rank-stamps">${rankLabels.map((rank) => `<i class="${record.ranks.includes(rank as never)?'on':''}">${rank}</i>`).join('')}</div>` : ''}</article></div>`;
     this.query('#dock').querySelectorAll<HTMLButtonElement>('[data-fish]').forEach((button) => button.addEventListener('click', () => { this.selectedBook = button.dataset.fish as typeof this.selectedBook; this.renderBook(); }));
   }
 
   private renderShop(): void {
     const basketValue = this.save.basket.reduce((sum, item) => sum + item.value, 0);
-    const storyRewards = new Set(['float-2','rod-2']);
-    const visibleGear = GEAR.filter((gear) => !storyRewards.has(gear.id) || this.save.ownedGear.includes(gear.id) || this.save.chapter >= gear.unlockChapter);
+    const visibleGear = GEAR;
     const gold = '<i class="gold-coin" aria-hidden="true"></i>';
     const baitShelf = (Object.keys(BAITS) as BaitId[]).map((baitId) => {
       const bait = BAITS[baitId];
@@ -1146,10 +1169,11 @@ class FishingApp {
       const price = locked ? '第一章で入荷' : bait.reusable ? '何度でも使用可' : `${gold}${bait.price} G / ${bait.bundle}個`;
       return `<button data-buy-bait="${baitId}" class="bait-item ${bait.reusable ? 'reusable' : ''}" ${locked || bait.reusable ? 'disabled' : ''}><span class="bait-pixel" data-bait-art="${baitId}"></span><span><b>${bait.name}</b><small>${bait.description}</small><em>${stock}</em></span><strong>${price}</strong></button>`;
     }).join('');
-    this.query('#dock').innerHTML = `<div class="shop-head"><div class="shopkeeper"><span>釣</span></div><div><small>月波釣具店　店主・鵜沢</small><p>「道具は腕を助ける。でも、魚を見るのは君だよ」</p></div><strong class="shop-wallet">${gold}<span id="money">${this.save.money.toLocaleString()}</span><small>G</small></strong></div>
+    this.query('#dock').innerHTML = `<div class="shop-head"><div class="shopkeeper"><span>釣</span></div><div><small>月波釣具店　店主・鵜沢</small><p>「道具は腕を助ける。でも、魚を見るのは君だよ」</p></div><div class="shop-tools"><strong class="shop-wallet">${gold}<span id="money">${this.save.money.toLocaleString()}</span><small>G</small></strong><button id="shop-tackle-box" class="tiny-button">所持品・装備</button></div></div>
       <button id="sell" class="sell-button" ${this.save.basket.length ? '' : 'disabled'}><span>釣果をまとめて売る <small>${this.save.basket.length}匹</small></span><strong>${gold}+ ${basketValue} G</strong></button>
       <section class="bait-shop"><h3>エサ・仕掛け <small>エサは着水時に1個消費</small></h3><div class="bait-shelf">${baitShelf}</div></section>
-      <p class="tackle-level-guide">釣具を一つでもLv.2へ上げると★2・★3、Lv.3で★4の遭遇点が増える。</p><div class="gear-grid">${(['rod','float','hook'] as GearCategory[]).map((category) => `<section><h3>${CATEGORY_NAMES[category]}</h3>${visibleGear.filter((gear) => gear.category === category).map((gear) => { const owned = this.save.ownedGear.includes(gear.id); const equipped = this.save.equipped[category] === gear.id; const locked = this.save.chapter < gear.unlockChapter; const unlockLabel = ['序章','第一章','第二章','第二章報酬','第四章'][gear.unlockChapter] ?? `第${gear.unlockChapter}章`; const art = gear.asset ? `<img src="${gear.asset}" alt="">` : '<span>?</span>'; return `<button data-gear="${gear.id}" class="gear ${equipped?'equipped':''}" ${locked?'disabled':''}><div class="gear-icon">${art}<i>Lv.${gear.level}</i></div><span><b>${gear.name}</b><small>${gear.description}</small></span><em>${locked?unlockLabel:equipped?'装備中':owned?'装備する':`${gold}${gear.price} G`}</em></button>`; }).join('')}</section>`).join('')}</div>`;
+      <p class="tackle-level-guide">釣具を一つでもLv.2へ上げると★2・★3、Lv.3で★4の遭遇点が増える。</p><div class="gear-grid">${(['rod','float','hook'] as GearCategory[]).map((category) => `<section><h3>${CATEGORY_NAMES[category]}</h3>${visibleGear.filter((gear) => gear.category === category).map((gear) => { const owned = this.save.ownedGear.includes(gear.id); const equipped = this.save.equipped[category] === gear.id; const locked = this.save.chapter < gear.unlockChapter; const unlockLabel = gear.id === 'float-2' ? '第一章報酬' : gear.id === 'rod-2' ? '第二章報酬' : ['序章','第一章','第二章','第三章','第四章'][gear.unlockChapter] ?? `第${gear.unlockChapter}章`; const art = `<img src="${gear.asset}" alt="">`; return `<button data-gear="${gear.id}" class="gear ${equipped?'equipped':''} ${locked?'locked':''}" ${locked?'disabled':''}><div class="gear-icon">${art}<i>Lv.${gear.level}</i></div><span><b>${gear.name}</b><small>${gear.description}</small></span><em>${locked?unlockLabel:equipped?'装備中':owned?'装備する':`${gold}${gear.price} G`}</em></button>`; }).join('')}</section>`).join('')}</div>`;
+    this.root.querySelector('#shop-tackle-box')?.addEventListener('click', () => this.openTackleBox());
     this.root.querySelector('#sell')?.addEventListener('click', () => { const earned = sellBasket(this.save); persistSave(this.save); this.updateMoney(); sfx('buy'); this.toast(`${earned} G で買い取ってもらった`); this.renderShop(); });
     this.query('#dock').querySelectorAll<HTMLButtonElement>('[data-buy-bait]').forEach((button) => button.addEventListener('click', () => {
       const baitId = button.dataset.buyBait as BaitId;
