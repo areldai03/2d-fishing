@@ -824,7 +824,7 @@ class FishingApp {
     const catchActions = iwanaChallengeEvent
       ? `<button id="catch-keep" class="primary">傷を記録する</button>`
       : `<div class="catch-actions"><button id="catch-aquarium" class="catch-secondary">${waterLabel}へ入れる</button><button id="catch-keep" class="primary">記録して持ち帰る</button></div>`;
-    overlay.innerHTML = `<div class="catch-dimmer"><section class="catch-card ${item.rank === '巨大' ? 'giant' : ''}"><div class="catch-rays"></div><p class="catch-label">${tags.map((tag) => `<span>${tag}</span>`).join('')}</p><div class="catch-fish-stage"><img src="${fish.sprite}" alt="${fish.name}"></div><div class="catch-rarity-strip"><span>SPECIES RARITY</span><b>${'★'.repeat(fish.rarity)}${'☆'.repeat(4-fish.rarity)}</b></div><h2>${fish.name}</h2><div class="catch-size"><strong>${item.size.toFixed(1)}</strong> cm <i>${item.rank}サイズ</i></div><p>${disposition}</p>${catchActions}</section></div>`;
+    overlay.innerHTML = `<div class="catch-dimmer"><section class="catch-card ${item.rank === '巨大' ? 'giant' : ''}"><div class="catch-rays"></div><p class="catch-label">${tags.map((tag) => `<span>${tag}</span>`).join('')}</p><div class="catch-fish-stage"><img src="${fish.sprite}" alt="${fish.name}"></div><div class="catch-result-info"><div class="catch-name-row"><h2>${fish.name}</h2><div class="catch-rarity"><span>RARITY</span><b aria-label="希少度 ${fish.rarity}">${'★'.repeat(fish.rarity)}${'☆'.repeat(4-fish.rarity)}</b></div></div><div class="catch-size"><strong>${item.size.toFixed(1)}</strong> cm <i>${item.rank}サイズ</i></div></div><p>${disposition}</p>${catchActions}</section></div>`;
     const finishCatch = (tankMessage?: string) => {
       overlay.innerHTML = '';
       const chapterStarted = previousChapter === 0 && this.save.chapter === 1;
