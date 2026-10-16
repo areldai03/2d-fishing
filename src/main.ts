@@ -424,14 +424,14 @@ class FishingApp {
       ? { src:'/assets/backgrounds/field-archive-pixel-v1.png', alt:'魚の観測資料が広がる机', eyebrow:'FIELD ARCHIVE', title:'魚類観測資料室' }
       : tab === 'shop'
         ? { src:'/assets/backgrounds/tackle-shop-pixel-v1.png', alt:'月波釣具店の店内', eyebrow:'TSUKINAMI TACKLE', title:'月波釣具店' }
-        : { src:'/assets/backgrounds/route-map-pixel-v2.png', alt:'東雲大学から川を経て渓流と月波港へ分岐する調査地図', eyebrow:'FIELD ROUTE', title:'月波川流域・調査地域図' };
+        : { src:'/assets/backgrounds/route-map-pixel-v3.png', alt:'東雲大学、青葉渓流、月波港の位置を示す調査地図', eyebrow:'FIELD MAP', title:'月波川流域・調査地域図' };
     const image = this.query<HTMLImageElement>('#menu-scene-image');
     image.src = config.src;
     image.alt = config.alt;
     this.query('#menu-scene-caption').innerHTML = `<small>${config.eyebrow}</small><strong>${config.title}</strong>`;
     const pins = this.query('#map-pins');
     if (tab !== 'map') { pins.innerHTML = ''; return; }
-    pins.innerHTML = `<div class="map-landmark university"><i></i><span>東雲大学<small>第七実験棟</small></span></div><div class="map-landmark shop"><i></i><span>月波釣具店<small>川沿い商店街</small></span></div><div class="map-landmark future"><i></i><span>山上観測広場<small>未調査｜古い観測標が残る</small></span></div><button data-map-stage="mountain-stream" class="map-pin stream ${this.save.unlockedStages.includes('mountain-stream') ? '' : 'locked'}"><i></i><span>青葉渓流<small>${this.save.unlockedStages.includes('mountain-stream') ? '上流バス → 山道' : '未調査'}</small></span></button><button data-map-stage="campus-river" class="map-pin river"><i></i><span>大学裏の川<small>研究室から徒歩3分</small></span></button><button data-map-stage="tsukinami-port" class="map-pin port ${this.save.unlockedStages.includes('tsukinami-port') ? '' : 'locked'}"><i></i><span>月波港<small>${this.save.unlockedStages.includes('tsukinami-port') ? '海岸線バス → 港' : '未調査'}</small></span></button>`;
+    pins.innerHTML = `<div class="map-landmark university"><i></i><span>東雲大学<small>第七実験棟</small></span></div><div class="map-landmark shop"><i></i><span>月波釣具店<small>川沿い商店街</small></span></div><div class="map-landmark future"><i></i><span>山上観測広場<small>未調査｜古い観測標が残る</small></span></div><button data-map-stage="mountain-stream" class="map-pin stream ${this.save.unlockedStages.includes('mountain-stream') ? '' : 'locked'}"><i></i><span>青葉渓流<small>${this.save.unlockedStages.includes('mountain-stream') ? '上流バス下車 → 山道' : '未調査'}</small></span></button><button data-map-stage="campus-river" class="map-pin river"><i></i><span>大学裏の川<small>研究室から徒歩3分</small></span></button><button data-map-stage="tsukinami-port" class="map-pin port ${this.save.unlockedStages.includes('tsukinami-port') ? '' : 'locked'}"><i></i><span>月波港<small>${this.save.unlockedStages.includes('tsukinami-port') ? '海岸線バス下車 → 港' : '未調査'}</small></span></button>`;
     pins.querySelectorAll<HTMLButtonElement>('[data-map-stage]').forEach((button) => button.addEventListener('click', () => this.travelTo(button.dataset.mapStage as StageId)));
   }
 
