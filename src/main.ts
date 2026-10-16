@@ -9,13 +9,16 @@ import { chooseFish, completeTackleShopVisit, makeCatch, portSurveyReady, recomm
 import { biteWindowMs, canLandFish, createFightState, landingTolerance, specimenPower, stepFight, type FightState } from './core/fight';
 import { isLurePullOnCurrent, lureWindow, stepLureMarker, type PortTide } from './core/lure';
 import { baitAvailable, buyBait, buyOrEquip, consumeBait } from './core/shop';
+import { addStoryFlag, getCurrentQuest, getHomeStoryState, getObservationMilestones, hasStoryFlag } from './core/storyProgress';
 import { FISH, FISH_LIST } from './data/fish';
 import { BAITS } from './data/baits';
 import { GEAR, CATEGORY_NAMES } from './data/equipment';
 import { STAGES } from './data/stages';
 import { STORY } from './data/story';
+import { StoryPlayer } from './story/StoryPlayer';
+import { storyPortrait, storySpeakerName } from './story/characters';
 import { setBgm, sfx, type BgmTheme } from './audio';
-import type { AquariumKind, AquariumResident, BaitId, CatchItem, FishData, GearCategory, GearData, SaveData, StageId, StorySceneData } from './types';
+import type { AquariumKind, AquariumResident, BaitId, CatchItem, FishData, GearCategory, GearData, SaveData, StageId } from './types';
 
 type FishingPhase = 'idle' | 'casting' | 'luring' | 'waiting' | 'nibble' | 'bite' | 'fight' | 'landing' | 'landing-result';
 type FishingSpot = 'edge' | 'rapid' | 'deep-pool' | 'harbor-wall' | 'breakwater' | 'river-mouth';
@@ -50,10 +53,12 @@ class FishingApp {
   private lureFrame = 0;
   private lureLastFrame = 0;
   private aquariumView?: AquariumView;
+  private storyPlayer: StoryPlayer;
 
   constructor(root: HTMLElement) {
     this.root = root;
     this.renderShell();
+    this.storyPlayer = new StoryPlayer(this.query('#overlay'), () => this.bgmForTab(this.currentTab));
     const game = createGame(this.query('#game-canvas'));
     game.events.once('ready', () => undefined);
     const wait = window.setInterval(() => {
@@ -171,92 +176,7 @@ class FishingApp {
   }
 
   private playStory(sceneId: keyof typeof STORY, onComplete?: () => void): void {
-    setBgm('story');
-    const scene = STORY[sceneId];
-    if (scene.presentation === 'cinematic') return this.playCinematicStory(scene, onComplete);
-    const lines = scene.lines;
-    let index = 0;
-    const overlay = this.query('#overlay');
-    overlay.innerHTML = `<section class="story-card story-${scene.backdrop} story-${scene.id}"><div class="story-art"><div class="story-chapter">${scene.title}</div><img class="story-character" src="" alt=""><div class="story-gradient"></div></div><div class="dialogue"><span></span><p></p><div class="dialogue-actions"><button class="story-log">LOG</button><button class="story-next">次へ <kbd>Space</kbd></button></div></div><div id="story-backlog" class="story-backlog hidden"></div></section>`;
-    const portraitElement = overlay.querySelector<HTMLImageElement>('.story-character')!;
-    const dialogue = overlay.querySelector<HTMLElement>('.dialogue')!;
-    const speakerElement = dialogue.querySelector<HTMLElement>('span')!;
-    const textElement = dialogue.querySelector<HTMLElement>('p')!;
-    const draw = () => {
-      const line = lines[index];
-      const portrait = line.portrait ?? this.storyPortrait(line.speaker);
-      const lengthClass = line.text.length >= 48 ? 'long' : '';
-      if (portraitElement.getAttribute('src') !== portrait) portraitElement.src = portrait;
-      portraitElement.alt = this.storySpeakerName(line.speaker);
-      dialogue.className = `dialogue ${line.tone ?? ''} ${lengthClass}`;
-      speakerElement.textContent = this.storySpeakerName(line.speaker);
-      textElement.textContent = line.text;
-    };
-    const next = () => {
-      sfx('tap');
-      index++;
-      if (index < lines.length) return draw();
-      overlay.innerHTML = '';
-      setBgm(this.bgmForTab(this.currentTab));
-      onComplete?.();
-    };
-    overlay.querySelector('.story-next')?.addEventListener('click', next);
-    overlay.querySelector('.story-art')?.addEventListener('click', next);
-    overlay.querySelector('.story-log')?.addEventListener('click', () => {
-      const backlog = overlay.querySelector<HTMLElement>('#story-backlog');
-      if (!backlog) return;
-      backlog.classList.remove('hidden');
-      backlog.innerHTML = `<div><small>DIALOGUE LOG</small><h3>${scene.title}</h3>${lines.slice(0,index+1).map((item) => `<p><b>${this.storySpeakerName(item.speaker)}</b>${item.text}</p>`).join('')}<button>閉じる</button></div>`;
-      backlog.querySelector('button')?.addEventListener('click', () => backlog.classList.add('hidden'));
-    });
-    draw();
-  }
-
-  private playCinematicStory(scene: StorySceneData, onComplete?: () => void): void {
-    const lines = scene.lines;
-    let index = 0;
-    const overlay = this.query('#overlay');
-    overlay.innerHTML = `<section class="encounter-cinematic"><div class="encounter-image" role="button" aria-label="次へ"><img src="${scene.art}" alt="夕暮れの川と水中の巨大な銀色魚"><div class="encounter-waterline"></div><i class="encounter-bubble b1"></i><i class="encounter-bubble b2"></i><div class="encounter-scan"></div></div><div class="encounter-silhouette hidden"></div><div class="encounter-scene-label"><small>FIRST CONTACT</small><b>${scene.title}</b></div><div class="encounter-caption"><span></span><p></p><div class="encounter-caption-foot"><button class="story-next">次へ <kbd>Space</kbd></button></div></div></section>`;
-    const cinematic = overlay.querySelector<HTMLElement>('.encounter-cinematic')!;
-    const silhouette = overlay.querySelector<HTMLElement>('.encounter-silhouette')!;
-    const caption = overlay.querySelector<HTMLElement>('.encounter-caption')!;
-    const speakerElement = caption.querySelector<HTMLElement>('span')!;
-    const textElement = caption.querySelector<HTMLElement>('p')!;
-    const draw = () => {
-      const line = lines[index];
-      cinematic.classList.toggle('has-silhouette', Boolean(line.portrait));
-      caption.className = `encounter-caption ${line.tone ?? ''}`;
-      speakerElement.textContent = this.storySpeakerName(line.speaker);
-      textElement.textContent = line.text;
-      silhouette.classList.toggle('hidden', !line.portrait);
-      if (line.portrait) silhouette.innerHTML = `<img src="${line.portrait}" alt="${line.speaker}のシルエット">`;
-    };
-    const next = () => {
-      sfx('tap');
-      index++;
-      if (index < lines.length) return draw();
-      overlay.innerHTML = '';
-      setBgm(this.bgmForTab(this.currentTab));
-      onComplete?.();
-    };
-    overlay.querySelector('.story-next')?.addEventListener('click', next);
-    overlay.querySelector('.encounter-image')?.addEventListener('click', next);
-    silhouette.addEventListener('click', next);
-    draw();
-  }
-
-  private storyPortrait(speaker: string): string {
-    if (speaker.includes('森野')) return '/assets/characters/morino-pixel-v1.png';
-    if (speaker.includes('鵜沢')) return '/assets/characters/uzawa-pixel-v1.png';
-    if (speaker.includes('磯部')) return '/assets/characters/isobe-ren-pixel-v1.png';
-    return '/assets/characters/protagonist-pixel-v1.png';
-  }
-
-  private storySpeakerName(speaker: string): string {
-    if (speaker === '主人公') return '水瀬 朔';
-    if (speaker === '先輩・森野') return '森野 澪';
-    if (speaker === '店主・鵜沢') return '鵜沢 源一';
-    return speaker;
+    this.storyPlayer.play(sceneId, onComplete);
   }
 
   private showLabBubble(title: string, text: string): void {
@@ -437,33 +357,25 @@ class FishingApp {
 
   private renderHome(): void {
     this.query('#lab-bubble').classList.add('hidden');
-    const quest = this.currentQuest();
-    const reportReady = this.save.chapter === 1 && this.hasFlag('uzawa-intro-seen') && streamSurveyReady(this.save) && !this.hasFlag('stream-mid-report-seen');
-    const completeReady = this.save.chapter === 1 && this.hasFlag('uzawa-intro-seen') && this.hasFlag('iwana-challenge-seen');
-    const portReportReady = this.save.chapter === 2 && portSurveyReady(this.save) && !this.hasFlag('port-mid-report-seen');
-    const chapter2CompleteReady = this.save.chapter === 2 && this.hasFlag('tournament-suzuki-seen');
-    const actionReady = reportReady || completeReady || portReportReady || chapter2CompleteReady;
-    const needsShopIntro = this.save.chapter === 1 && !this.hasFlag('uzawa-intro-seen');
-    const chapterLabel = this.save.chapter === 0 ? '序章' : this.save.chapter === 1 ? '第一章' : this.save.chapter === 2 ? '第二章' : '第二章 完了';
-    const chapterTitle = this.save.chapter === 0 ? '昨日の銀色を探して' : this.save.chapter === 1 ? '川の上流にて' : this.save.chapter === 2 ? '夕暮れの港' : '夜へ続く水路';
-    const primaryLabel = chapter2CompleteReady ? '港の最終報告をまとめる' : portReportReady ? '潮汐データを整理する' : completeReady ? '最終報告をまとめる' : reportReady ? '中間報告をまとめる' : needsShopIntro ? '月波釣具店へ行く' : this.save.chapter === 0 ? '大学裏の川へ行く' : '釣行を続ける';
+    const quest = getCurrentQuest(this.save);
+    const home = getHomeStoryState(this.save);
     this.query('#dock').innerHTML = `<div class="home-dock">
-      <div class="home-header"><div><small>${chapterLabel}</small><h2>${chapterTitle}</h2></div><span class="clock">18:42</span></div>
-      <article class="quest-card ${actionReady ? 'ready' : ''}"><small>CURRENT OBJECTIVE</small><h3>${quest.title}</h3><p>${quest.description}</p><div class="quest-progress"><i style="width:${quest.progress}%"></i></div><em>${quest.counter}</em></article>
+      <div class="home-header"><div><small>${home.chapterLabel}</small><h2>${home.chapterTitle}</h2></div><span class="clock">18:42</span></div>
+      <article class="quest-card ${home.actionReady ? 'ready' : ''}"><small>CURRENT OBJECTIVE</small><h3>${quest.title}</h3><p>${quest.description}</p><div class="quest-progress"><i style="width:${quest.progress}%"></i></div><em>${quest.counter}</em></article>
       <div class="home-actions">
-        <button id="home-primary" class="pixel-button">${primaryLabel}<small>${actionReady || needsShopIntro ? `${chapterLabel}の物語を進める` : '装備を確認して出発'}</small></button>
+        <button id="home-primary" class="pixel-button">${home.primaryLabel}<small>${home.primaryHint}</small></button>
         <div class="home-side-actions"><button id="home-note" class="note-button">観測メモ<span>${Object.keys(this.save.records).length}種 / ${this.save.totalCaught}匹</span></button><button id="home-story-log" class="note-button story-log-button">回想ログ<span>出来事を読み返す</span></button></div>
       </div>
-      <p class="lab-message">${this.save.chapter >= 3 ? '港の観測記録：同期済み　次回調査は日没後' : this.save.chapter === 2 ? '潮汐データ：取得中　夕まずめの観測窓を解析しています' : this.save.chapter === 0 ? '昨夜の計算ジョブ：完了　結果ファイルを保存済み' : '次の計算ジョブ：準備中　観測記録を整理しています'}</p>
+      <p class="lab-message">${home.labMessage}</p>
     </div>`;
     this.query('#home-primary').addEventListener('click', () => {
       sfx('tap');
-      if (reportReady) return this.continueChapterOne();
-      if (completeReady) return this.finishChapterOne();
-      if (portReportReady) return this.continueChapterTwo();
-      if (chapter2CompleteReady) return this.finishChapterTwo();
-      if (needsShopIntro) return this.activateTab('shop');
-      this.activateTab(this.save.chapter === 0 ? 'fish' : 'map');
+      if (home.action === 'chapter1-report') return this.continueChapterOne();
+      if (home.action === 'chapter1-finale') return this.finishChapterOne();
+      if (home.action === 'chapter2-report') return this.continueChapterTwo();
+      if (home.action === 'chapter2-finale') return this.finishChapterTwo();
+      if (home.action === 'shop-intro') return this.activateTab('shop');
+      this.activateTab(home.action === 'go-fishing' ? 'fish' : 'map');
     });
     this.query('#home-note').addEventListener('click', () => { sfx('tap'); this.activateTab('memo'); });
     this.query('#home-story-log').addEventListener('click', () => { sfx('tap'); this.activateTab('story-log'); });
@@ -476,23 +388,8 @@ class FishingApp {
       .filter((item) => item.record)
       .sort((a,b) => new Date(b.record!.firstCaughtAt).getTime() - new Date(a.record!.firstCaughtAt).getTime());
     const giantKinds = logs.filter((item) => item.record!.ranks.includes('巨大')).length;
-    const milestones = [
-      this.hasFlag('first-encounter-seen') ? ['最初の遭遇','大学裏の川で、三日月形の傷を持つ巨大な銀色魚を目撃。'] : null,
-      this.hasFlag('opening-seen') ? ['序章','銀色魚を目撃した翌日、森野先輩へ相談し、比較観測のため古い竿を借りた。'] : null,
-      this.hasFlag('first-catch-seen') ? ['初観測','初めて自分の操作で魚を釣り上げ、場所・エサ・大きさを記録した。'] : null,
-      this.hasFlag('prologue-caught-up') ? ['比較観測','大学裏で三匹を記録し、昨日の銀色魚が通常の魚影とは違うと確かめた。'] : null,
-      this.hasFlag('chapter1-unlocked') ? ['第一章','大学裏の観測を森野先輩へ報告し、月波釣具店を紹介された。'] : null,
-      this.hasFlag('uzawa-intro-seen') ? ['川の共同研究者','鵜沢店主から川虫と青葉渓流への調査ルートを教わった。'] : null,
-      this.hasFlag('yamame-story-seen') ? ['観測記録','青葉渓流でヤマメを初観測。流れを利用する逃走を記録。'] : null,
-      this.hasFlag('flow-boundary-deduced') ? ['観測仮説','白泡の脇と岩の裏に共通する「流れの境目」を特定した。'] : null,
-      this.hasFlag('iwana-challenge-seen') ? ['深みの調査','大型イワナの古傷を記録し、深みへリリースした。'] : null,
-      this.hasFlag('chapter1-complete') ? ['第一章完了','古い観測帳から、十五年前の銀色魚の記録を発見。'] : null,
-      this.hasFlag('port-arrival-seen') ? ['第二章','月波港で磯部蓮と出会い、潮目へルアーを通す方法を教わった。'] : null,
-      this.hasFlag('port-mid-report-seen') ? ['潮汐仮説','下げ潮の河口に小魚と大型魚が集まる条件を特定した。'] : null,
-      this.hasFlag('tournament-suzuki-seen') ? ['夕まずめ大会','大型スズキを記録し、傷が移動経路を示す可能性を確かめた。'] : null,
-      this.hasFlag('chapter2-complete') ? ['第二章完了','日没後に旧水路を通る銀色魚の影を、次の調査対象に定めた。'] : null,
-    ].filter((item): item is string[] => Boolean(item));
-    this.query('#dock').innerHTML = `<div class="memo-head"><button id="memo-back" class="tiny-button">← ホーム</button><div><small>FIELD JOURNAL</small><h2>観測メモ</h2></div></div><div class="memo-stats"><div><b>${this.save.totalCaught}</b><span>総捕獲</span></div><div><b>${logs.length}</b><span>観測魚種</span></div><div><b>${giantKinds}</b><span>巨大魚種</span></div></div><section class="memo-section"><h3>調査のあゆみ</h3>${milestones.length ? milestones.map((item,index) => `<article class="milestone"><i>${String(index+1).padStart(2,'0')}</i><div><b>${item[0]}</b><p>${item[1]}</p></div></article>`).join('') : '<p class="empty-log">まだ記録はない。川へ出て最初の一匹を観測しよう。</p>'}</section><section class="memo-section catch-log"><h3>初観測ログ</h3>${logs.map(({fish,record}) => `<article><time>${new Date(record!.firstCaughtAt).toLocaleDateString('ja-JP',{month:'numeric',day:'numeric'})}</time><img src="${fish.sprite}" alt=""><div><b>${fish.name}</b><small>${STAGES[record!.firstStage].name}｜最大 ${record!.maxSize.toFixed(1)}cm｜${record!.count}匹</small></div></article>`).join('') || '<p class="empty-log">未記録</p>'}</section>`;
+    const milestones = getObservationMilestones(this.save);
+    this.query('#dock').innerHTML = `<div class="memo-head"><button id="memo-back" class="tiny-button">← ホーム</button><div><small>FIELD JOURNAL</small><h2>観測メモ</h2></div></div><div class="memo-stats"><div><b>${this.save.totalCaught}</b><span>総捕獲</span></div><div><b>${logs.length}</b><span>観測魚種</span></div><div><b>${giantKinds}</b><span>巨大魚種</span></div></div><section class="memo-section"><h3>調査のあゆみ</h3>${milestones.length ? milestones.map((item,index) => `<article class="milestone"><i>${String(index+1).padStart(2,'0')}</i><div><b>${item.title}</b><p>${item.description}</p></div></article>`).join('') : '<p class="empty-log">まだ記録はない。川へ出て最初の一匹を観測しよう。</p>'}</section><section class="memo-section catch-log"><h3>初観測ログ</h3>${logs.map(({fish,record}) => `<article><time>${new Date(record!.firstCaughtAt).toLocaleDateString('ja-JP',{month:'numeric',day:'numeric'})}</time><img src="${fish.sprite}" alt=""><div><b>${fish.name}</b><small>${STAGES[record!.firstStage].name}｜最大 ${record!.maxSize.toFixed(1)}cm｜${record!.count}匹</small></div></article>`).join('') || '<p class="empty-log">未記録</p>'}</section>`;
     this.query('#memo-back').addEventListener('click', () => this.activateTab('home'));
   }
 
@@ -506,7 +403,7 @@ class FishingApp {
     }
     if (!unlocked.some((scene) => scene.id === this.selectedStoryArchive)) this.selectedStoryArchive = unlocked[unlocked.length - 1].id;
     const selected = unlocked.find((scene) => scene.id === this.selectedStoryArchive) ?? unlocked[0];
-    this.query('#dock').innerHTML = `<section class="story-archive"><header class="archive-head"><button id="story-archive-back" class="tiny-button">← ホーム</button><div><small>STORY ARCHIVE</small><h2>回想ログ</h2></div></header><nav class="archive-scenes" aria-label="回想する場面">${unlocked.map((scene) => `<button data-archive-scene="${scene.id}" class="${scene.id === selected.id ? 'active' : ''}"><span><small>${scene.archive.label}</small><b>${scene.title.split('｜').at(-1)}</b></span></button>`).join('')}</nav><article class="archive-thread"><div class="archive-thread-head"><div><small>${selected.archive.label}</small><h3>${selected.title}</h3><p>${selected.archive.summary}</p></div><button id="archive-replay">場面を再生 ▶</button></div><div class="archive-messages">${selected.lines.map((line) => { const player = line.speaker === '主人公'; const speaker = this.storySpeakerName(line.speaker); return `<div class="archive-message ${player ? 'player' : ''} ${line.tone ?? ''}"><img src="${line.portrait ?? this.storyPortrait(line.speaker)}" alt="${speaker}"><div><b>${speaker}</b><p>${line.text}</p></div></div>`; }).join('')}</div></article></section>`;
+    this.query('#dock').innerHTML = `<section class="story-archive"><header class="archive-head"><button id="story-archive-back" class="tiny-button">← ホーム</button><div><small>STORY ARCHIVE</small><h2>回想ログ</h2></div></header><nav class="archive-scenes" aria-label="回想する場面">${unlocked.map((scene) => `<button data-archive-scene="${scene.id}" class="${scene.id === selected.id ? 'active' : ''}"><span><small>${scene.archive.label}</small><b>${scene.title.split('｜').at(-1)}</b></span></button>`).join('')}</nav><article class="archive-thread"><div class="archive-thread-head"><div><small>${selected.archive.label}</small><h3>${selected.title}</h3><p>${selected.archive.summary}</p></div><button id="archive-replay">場面を再生 ▶</button></div><div class="archive-messages">${selected.lines.map((line) => { const player = line.speaker === '主人公'; const speaker = storySpeakerName(line.speaker); return `<div class="archive-message ${player ? 'player' : ''} ${line.tone ?? ''}"><img src="${line.portrait ?? storyPortrait(line.speaker)}" alt="${speaker}"><div><b>${speaker}</b><p>${line.text}</p></div></div>`; }).join('')}</div></article></section>`;
     this.query('#story-archive-back').addEventListener('click', () => this.activateTab('home'));
     this.query('#dock').querySelectorAll<HTMLButtonElement>('[data-archive-scene]').forEach((button) => button.addEventListener('click', () => {
       this.selectedStoryArchive = button.dataset.archiveScene ?? unlocked[0].id;
@@ -517,33 +414,6 @@ class FishingApp {
       sfx('tap');
       this.playStory(selected.id, () => this.activateTab('story-log'));
     });
-  }
-
-  private currentQuest(): { title: string; description: string; progress: number; counter: string } {
-    if (this.save.chapter >= 3) return { title:'第二章の観測完了', description:'日没後に旧水路が開く夜、銀色の影が動く。次の章では夜の川を調査する。', progress:100, counter:'次章：夜の川は眠らない' };
-    if (this.save.chapter === 2) {
-      if (!this.hasFlag('port-arrival-seen')) return { title:'月波港へ向かう', description:'古い観測帳に残る河口の目撃場所を、移動画面から訪ねよう。', progress:10, counter:'目的地：月波港' };
-      const portSpecies = FISH_LIST.filter((fish) => fish.habitat.includes('tsukinami-port') && this.save.records[fish.id]).length;
-      const portCount = this.save.stageCatchCounts['tsukinami-port'] ?? 0;
-      if (!portSurveyReady(this.save)) return { title:'港の「当たり前」を観測', description:'足元のハゼと中層のアジを含む、合計3匹・2魚種を記録しよう。', progress:25 + Math.min(38, Math.min(portCount/3, portSpecies/2)*38), counter:`${portCount}/3匹・${portSpecies}/2種` };
-      if (!this.hasFlag('port-mid-report-seen')) return { title:'潮汐データを整理する', description:'研究室へ戻り、釣れた時刻と潮の向きを森野先輩と照らし合わせよう。', progress:68, counter:'報告可能' };
-      if (!this.hasFlag('tournament-suzuki-seen')) return { title:'夕まずめ大会で大型魚を狙う', description:'河口の潮目へルアーを遠投し、三回うまく引いてスズキを釣り上げよう。', progress:88, counter:'大会目標 0/1' };
-      return { title:'研究室へ戻って最終報告', description:'港の大型魚に残る傷と、日没後の監視記録を照らし合わせよう。', progress:98, counter:'帰還可能' };
-    }
-    if (this.save.chapter === 0) {
-      const species = Object.keys(this.save.records).length;
-      return { title:'大学裏の生態を調べる', description:'合計3匹、2魚種を観測して先輩へ報告しよう。', progress:Math.min(100, Math.min(this.save.totalCaught/3, species/2)*100), counter:`${this.save.totalCaught}/3匹・${species}/2種` };
-    }
-    if (!this.hasFlag('uzawa-intro-seen')) return { title:'川を知る人に会う', description:'月波釣具店を訪ね、店主の鵜沢さんに銀色魚の目撃を相談しよう。', progress:8, counter:'目的地：釣具屋' };
-    if (!this.hasFlag('stream-arrival-seen')) return { title:'青葉渓流へ向かう', description:'移動画面から青葉渓流を選び、鵜沢さんに会おう。', progress:15, counter:'目的地：青葉渓流' };
-    if (!this.save.records.yamame) return { title:'渓流の宝石を観測', description:'川虫を使い、白泡の横を狙ってヤマメを釣ろう。', progress:35, counter:'ヤマメ 0/1' };
-    const streamSpecies = FISH_LIST.filter((fish) => fish.habitat.includes('mountain-stream') && this.save.records[fish.id]).length;
-    const streamCount = this.save.stageCatchCounts['mountain-stream'] ?? 0;
-    if (!streamSurveyReady(this.save)) return { title:'渓流の違う顔を見る', description:'青葉渓流で合計3匹・2魚種を観測する。', progress:55 + Math.min(35, Math.min(streamCount/3, streamSpecies/2)*35), counter:`${streamCount}/3匹・${streamSpecies}/2種` };
-    if (!this.hasFlag('stream-mid-report-seen')) return { title:'研究室へ戻って中間報告', description:'渓流の観測記録を森野先輩と整理しよう。', progress:72, counter:'報告可能' };
-    if (!this.hasFlag('deep-pool-clue-seen')) return { title:'深みの入口を探す', description:'青葉渓流へ戻り、鵜沢さんと流れの深みを調べよう。', progress:80, counter:'目的地：青葉渓流' };
-    if (!this.hasFlag('iwana-challenge-seen')) return { title:'深みの大型イワナ', description:'地点「深い落ち込み」を選び、川虫を遠めへ流して大型イワナを釣ろう。', progress:90, counter:'大型イワナ 0/1' };
-    return { title:'研究室へ戻って最終報告', description:'大型イワナの傷と古い観測帳を照らし合わせよう。', progress:98, counter:'帰還可能' };
   }
 
   private continueChapterOne(): void {
@@ -619,8 +489,8 @@ class FishingApp {
     confirm.addEventListener('click', () => { sfx('tap'); overlay.innerHTML = ''; onComplete(); });
   }
 
-  private hasFlag(flag: string): boolean { return this.save.storyFlags.includes(flag); }
-  private addFlag(flag: string): void { if (!this.hasFlag(flag)) this.save.storyFlags.push(flag); }
+  private hasFlag(flag: string): boolean { return hasStoryFlag(this.save, flag); }
+  private addFlag(flag: string): void { addStoryFlag(this.save, flag); }
   private currentPortTide(): PortTide { return this.hasFlag('tournament-open') ? 'outflow' : 'slack'; }
 
   private renderFishing(): void {
