@@ -5,7 +5,7 @@ import { RiverScene } from './game/RiverScene';
 import { AquariumView } from './game/AquariumView';
 import { loadSave, persistSave, eraseSave } from './core/save';
 import { AQUARIUM_CAPACITY, aquariumKindForFish, aquariumResidents, moveCatchToAquarium, returnResidentToBasket } from './core/aquarium';
-import { chooseFish, completeTackleShopVisit, makeCatch, portSurveyReady, recordCatch, releaseCatch, sellBasket, streamSurveyReady } from './core/fishing';
+import { chooseFish, completeTackleShopVisit, makeCatch, portSurveyReady, recommendedTackleLevel, recordCatch, releaseCatch, sellBasket, streamSurveyReady } from './core/fishing';
 import { biteWindowMs, canLandFish, createFightState, fightDifficultyRating, landingTolerance, specimenPower, stepFight, type FightState } from './core/fight';
 import { isLurePullOnCurrent, lureWindow, stepLureMarker, type PortTide } from './core/lure';
 import { baitAvailable, buyBait, buyOrEquip, consumeBait } from './core/shop';
@@ -606,9 +606,10 @@ class FishingApp {
       persistSave(this.save);
     }
     const equipped = Object.fromEntries((['rod','float','hook'] as GearCategory[]).map((category) => [category, GEAR.find((gear) => gear.id === this.save.equipped[category])!])) as Record<GearCategory, typeof GEAR[number]>;
+    const tackleLevel = Math.max(equipped.rod.level, equipped.float.level, equipped.hook.level);
     const rodEffect = Math.round((1 - (1 - equipped.rod.control * 1.05)) * 100);
     const floatBonus = Math.round(equipped.float.control * 900);
-    const floatRareBonus = Math.round(equipped.float.control * 54);
+    const rarityCoverage = tackleLevel >= 3 ? '★1〜4に遭遇補正' : tackleLevel >= 2 ? '★1〜3に遭遇補正' : '★1に遭遇補正';
     const hookBonus = Math.round(equipped.hook.control * 900);
     const deepPoolUnlocked = this.hasFlag('deep-pool-clue-seen');
     const port = this.save.activeStage === 'tsukinami-port';
@@ -629,7 +630,7 @@ class FishingApp {
       ${spotRow}
       ${tideStrip}
       <div class="bait-row"><span>エサ</span>${baits.map((bait) => { const data = BAITS[bait]; const available = baitAvailable(this.save, bait); const count = data.reusable ? '∞' : `×${this.save.baitStock[bait as keyof SaveData['baitStock']]}`; return `<button data-bait="${bait}" class="chip ${bait === this.save.bait ? 'selected' : ''} ${available ? '' : 'empty'}" ${available ? '' : 'disabled'}><b>${bait}</b><small>${this.save.chapter < data.unlockChapter ? '未解禁' : count}</small></button>`; }).join('')}</div>
-      <div class="tackle-strip"><span><i>竿</i>${equipped.rod.name}<small>${rodEffect ? `張力 -${rodEffect}%` : '標準'}</small></span><span><i>浮</i>${equipped.float.name}<small>${floatBonus ? `希少+${floatRareBonus}pt / +${floatBonus}ms` : '標準'}</small></span><span><i>針</i>${equipped.hook.name}<small>${hookBonus ? `+${hookBonus}ms・疲労UP` : '標準'}</small></span></div>
+      <div class="tackle-strip" data-tier-note="調査装備 Lv.${tackleLevel}｜${rarityCoverage}"><span><i>竿</i>${equipped.rod.name}<small>${rodEffect ? `張力 -${rodEffect}%` : '標準'}</small></span><span><i>浮</i>${equipped.float.name}<small>${floatBonus ? `合わせ +${floatBonus}ms` : '標準'}</small></span><span><i>針</i>${equipped.hook.name}<small>${hookBonus ? `+${hookBonus}ms・疲労UP` : '標準'}</small></span></div>
       <div class="cast-panel" id="cast-panel">
         <div class="phase-copy"><small id="phase-label">CAST</small><strong id="phase-title">狙う距離を決めよう</strong><p id="phase-help">ボタンでメーターを動かし、もう一度押してキャスト</p></div>
         <div class="cast-meter" id="cast-meter"><i style="left:${this.castPower*100}%"></i></div>
@@ -716,8 +717,8 @@ class FishingApp {
         : this.fishingSpot === 'deep-pool'
           ? .55 + this.castPower * .45
           : .22 + this.castPower * .58;
-    const floatControl = GEAR.find((gear) => gear.id === this.save.equipped.float)?.control ?? 0;
-    this.pendingFish = tournamentTarget ? FISH.suzuki : deepPoolTarget ? FISH.iwana : chooseFish(this.save.activeStage, this.save.bait, habitatCast, Math.random, floatControl);
+    const tackleLevel = Math.max(...(['rod','float','hook'] as GearCategory[]).map((category) => GEAR.find((gear) => gear.id === this.save.equipped[category])?.level ?? 1));
+    this.pendingFish = tournamentTarget ? FISH.suzuki : deepPoolTarget ? FISH.iwana : chooseFish(this.save.activeStage, this.save.bait, habitatCast, Math.random, tackleLevel);
     this.pendingCatch = tournamentTarget ? makeCatch(this.pendingFish, () => .84, this.castPower) : deepPoolTarget ? makeCatch(this.pendingFish, () => .78, this.castPower) : makeCatch(this.pendingFish, Math.random, this.castPower);
     this.pendingPower = specimenPower(this.pendingFish, this.pendingCatch.size);
     this.scene?.setMood('waiting', this.castPower);
@@ -1129,7 +1130,7 @@ class FishingApp {
     const difficulty = fightDifficultyRating(fish);
     this.query('#dock').innerHTML = `<div class="section-heading"><div><small>FIELD NOTE</small><h2>魚類観測図鑑</h2></div><div class="completion"><b>${Math.round(found/FISH_LIST.length*100)}%</b><span>${found} / ${FISH_LIST.length} 種</span></div></div>
       <div class="book-layout"><div class="fish-list">${FISH_LIST.map((item, index) => { const known = this.save.records[item.id]; return `<button data-fish="${item.id}" class="${item.id===fish.id?'selected':''} ${known?'':'unknown'}"><span>${known ? String(index+1).padStart(2,'0') : '??'}</span><b>${known ? item.name : '未観測'}</b><small>${known ? `${known.maxSize.toFixed(1)}cm` : '——'}</small></button>`; }).join('')}</div>
-      <article class="fish-entry ${record?'':'silhouette'}"><div class="entry-visual">${record ? `<img src="${fish.sprite}" alt="${fish.name}"><span aria-label="魚種の希少度">${'★'.repeat(fish.rarity)}${'☆'.repeat(4-fish.rarity)}</span>` : '<div class="unknown-specimen" aria-label="未観測の魚"><i>?</i><b></b><b></b></div>'}</div><small>${record ? `NO.${String(FISH_LIST.indexOf(fish)+1).padStart(2,'0')}` : 'UNREGISTERED'}</small><h3>${record ? fish.name : '未観測'}</h3><p>${record ? fish.description : '釣り上げるまで、名前も大きさも分からない。水面の気配を頼りに探してみよう。'}</p>${record ? `<dl><div><dt>希少度</dt><dd>${'★'.repeat(fish.rarity)}${'☆'.repeat(4-fish.rarity)} <small>地域内での出会いにくさ</small></dd></div><div><dt>生息域</dt><dd>${fish.habitat.map((id) => STAGES[id].name).join('・')}</dd></div><div><dt>サイズ域</dt><dd>${fish.minSize}–${fish.maxSize} cm</dd></div><div><dt>好物</dt><dd>${fish.preferredBaits.join('・')}</dd></div><div><dt>狙い目</dt><dd>${distanceNames[fish.distancePreference]}</dd></div><div><dt>手強さ</dt><dd class="difficulty">${'◆'.repeat(difficulty)}${'◇'.repeat(5-difficulty)} <small>標準個体・初期装備</small></dd></div><div><dt>最大記録</dt><dd>${record.maxSize.toFixed(1)} cm</dd></div><div><dt>捕獲数</dt><dd>${record.count} 匹</dd></div><div><dt>初観測</dt><dd>${STAGES[record.firstStage].name}</dd></div></dl><div class="rank-stamps">${rankLabels.map((rank) => `<i class="${record.ranks.includes(rank as never)?'on':''}">${rank}</i>`).join('')}</div>` : ''}</article></div>`;
+      <article class="fish-entry ${record?'':'silhouette'}"><div class="entry-visual">${record ? `<img src="${fish.sprite}" alt="${fish.name}"><span aria-label="魚種の希少度">${'★'.repeat(fish.rarity)}${'☆'.repeat(4-fish.rarity)}</span>` : '<div class="unknown-specimen" aria-label="未観測の魚"><i>?</i><b></b><b></b></div>'}</div><small>${record ? `NO.${String(FISH_LIST.indexOf(fish)+1).padStart(2,'0')}` : 'UNREGISTERED'}</small><h3>${record ? fish.name : '未観測'}</h3><p>${record ? fish.description : '釣り上げるまで、名前も大きさも分からない。水面の気配を頼りに探してみよう。'}</p>${record ? `<dl><div><dt>希少度</dt><dd>${'★'.repeat(fish.rarity)}${'☆'.repeat(4-fish.rarity)} <small>地域内での出会いにくさ</small></dd></div><div><dt>推奨釣具</dt><dd>調査装備 Lv.${recommendedTackleLevel(fish.rarity)} <small>満たすと遭遇点UP</small></dd></div><div><dt>生息域</dt><dd>${fish.habitat.map((id) => STAGES[id].name).join('・')}</dd></div><div><dt>サイズ域</dt><dd>${fish.minSize}–${fish.maxSize} cm</dd></div><div><dt>好物</dt><dd>${fish.preferredBaits.join('・')}</dd></div><div><dt>狙い目</dt><dd>${distanceNames[fish.distancePreference]}</dd></div><div><dt>手強さ</dt><dd class="difficulty">${'◆'.repeat(difficulty)}${'◇'.repeat(5-difficulty)} <small>標準個体・初期装備</small></dd></div><div><dt>最大記録</dt><dd>${record.maxSize.toFixed(1)} cm</dd></div><div><dt>捕獲数</dt><dd>${record.count} 匹</dd></div><div><dt>初観測</dt><dd>${STAGES[record.firstStage].name}</dd></div></dl><div class="rank-stamps">${rankLabels.map((rank) => `<i class="${record.ranks.includes(rank as never)?'on':''}">${rank}</i>`).join('')}</div>` : ''}</article></div>`;
     this.query('#dock').querySelectorAll<HTMLButtonElement>('[data-fish]').forEach((button) => button.addEventListener('click', () => { this.selectedBook = button.dataset.fish as typeof this.selectedBook; this.renderBook(); }));
   }
 
@@ -1148,7 +1149,7 @@ class FishingApp {
     this.query('#dock').innerHTML = `<div class="shop-head"><div class="shopkeeper"><span>釣</span></div><div><small>月波釣具店　店主・鵜沢</small><p>「道具は腕を助ける。でも、魚を見るのは君だよ」</p></div><strong class="shop-wallet">${gold}<span id="money">${this.save.money.toLocaleString()}</span><small>G</small></strong></div>
       <button id="sell" class="sell-button" ${this.save.basket.length ? '' : 'disabled'}><span>釣果をまとめて売る <small>${this.save.basket.length}匹</small></span><strong>${gold}+ ${basketValue} G</strong></button>
       <section class="bait-shop"><h3>エサ・仕掛け <small>エサは着水時に1個消費</small></h3><div class="bait-shelf">${baitShelf}</div></section>
-      <div class="gear-grid">${(['rod','float','hook'] as GearCategory[]).map((category) => `<section><h3>${CATEGORY_NAMES[category]}</h3>${visibleGear.filter((gear) => gear.category === category).map((gear) => { const owned = this.save.ownedGear.includes(gear.id); const equipped = this.save.equipped[category] === gear.id; const locked = this.save.chapter < gear.unlockChapter; const unlockLabel = ['序章','第一章','第二章','第二章報酬','第四章'][gear.unlockChapter] ?? `第${gear.unlockChapter}章`; const art = gear.asset ? `<img src="${gear.asset}" alt="">` : '<span>?</span>'; return `<button data-gear="${gear.id}" class="gear ${equipped?'equipped':''}" ${locked?'disabled':''}><div class="gear-icon">${art}<i>Lv.${gear.level}</i></div><span><b>${gear.name}</b><small>${gear.description}</small></span><em>${locked?unlockLabel:equipped?'装備中':owned?'装備する':`${gold}${gear.price} G`}</em></button>`; }).join('')}</section>`).join('')}</div>`;
+      <p class="tackle-level-guide">釣具を一つでもLv.2へ上げると★2・★3、Lv.3で★4の遭遇点が増える。</p><div class="gear-grid">${(['rod','float','hook'] as GearCategory[]).map((category) => `<section><h3>${CATEGORY_NAMES[category]}</h3>${visibleGear.filter((gear) => gear.category === category).map((gear) => { const owned = this.save.ownedGear.includes(gear.id); const equipped = this.save.equipped[category] === gear.id; const locked = this.save.chapter < gear.unlockChapter; const unlockLabel = ['序章','第一章','第二章','第二章報酬','第四章'][gear.unlockChapter] ?? `第${gear.unlockChapter}章`; const art = gear.asset ? `<img src="${gear.asset}" alt="">` : '<span>?</span>'; return `<button data-gear="${gear.id}" class="gear ${equipped?'equipped':''}" ${locked?'disabled':''}><div class="gear-icon">${art}<i>Lv.${gear.level}</i></div><span><b>${gear.name}</b><small>${gear.description}</small></span><em>${locked?unlockLabel:equipped?'装備中':owned?'装備する':`${gold}${gear.price} G`}</em></button>`; }).join('')}</section>`).join('')}</div>`;
     this.root.querySelector('#sell')?.addEventListener('click', () => { const earned = sellBasket(this.save); persistSave(this.save); this.updateMoney(); sfx('buy'); this.toast(`${earned} G で買い取ってもらった`); this.renderShop(); });
     this.query('#dock').querySelectorAll<HTMLButtonElement>('[data-buy-bait]').forEach((button) => button.addEventListener('click', () => {
       const baitId = button.dataset.buyBait as BaitId;

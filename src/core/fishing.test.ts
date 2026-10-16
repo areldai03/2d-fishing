@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FISH } from '../data/fish';
 import { createNewSave } from './save';
-import { chooseFish, completeTackleShopVisit, encounterBreakdown, encounterChances, encounterScore, makeCatch, portSurveyReady, recordCatch, releaseCatch, sellBasket, sizeRank, streamSurveyReady } from './fishing';
+import { chooseFish, completeTackleShopVisit, encounterBreakdown, encounterChances, encounterScore, makeCatch, portSurveyReady, recommendedTackleLevel, recordCatch, releaseCatch, sellBasket, sizeRank, streamSurveyReady } from './fishing';
 import { biteWindowMs, canLandFish, createFightState, fightDifficultyRating, getFightBeat, landingTolerance, specimenPower, stepFight } from './fight';
 
 describe('fishing rules', () => {
@@ -30,12 +30,16 @@ describe('fishing rules', () => {
     expect(encounterScore(FISH.oikawa, 'mountain-stream', '川虫', .1)).toBe(0);
   });
 
-  it('uses additive encounter points and lets better floats help detect rare fish', () => {
-    const basic = encounterBreakdown(FISH.namazu, 'campus-river', 'ミミズ', .85, 0);
-    const improved = encounterBreakdown(FISH.namazu, 'campus-river', 'ミミズ', .85, .2);
+  it('uses additive encounter points and rewards matching tackle level to rarity', () => {
+    const basic = encounterBreakdown(FISH.namazu, 'campus-river', 'ミミズ', .85, 1);
+    const improved = encounterBreakdown(FISH.namazu, 'campus-river', 'ミミズ', .85, 2);
     expect(basic.total).toBe(basic.stage + basic.rarity + basic.localDensity + basic.bait + basic.distance + basic.tackle);
     expect(improved.tackle).toBeGreaterThan(basic.tackle);
-    expect(encounterChances('campus-river', 'ミミズ', .85, .2).namazu).toBeGreaterThan(encounterChances('campus-river', 'ミミズ', .85, 0).namazu!);
+    expect(encounterChances('campus-river', 'ミミズ', .85, 2).namazu).toBeGreaterThan(encounterChances('campus-river', 'ミミズ', .85, 1).namazu!);
+    expect(recommendedTackleLevel(1)).toBe(1);
+    expect(recommendedTackleLevel(2)).toBe(2);
+    expect(recommendedTackleLevel(3)).toBe(2);
+    expect(recommendedTackleLevel(4)).toBe(3);
   });
 
   it('exposes normalized encounter chances for balancing and UI checks', () => {

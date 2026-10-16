@@ -21,27 +21,36 @@ export interface EncounterBreakdown {
   total: number;
 }
 
-export function encounterBreakdown(fish: FishData, stage: StageId, bait: BaitId, cast: number, floatControl = 0): EncounterBreakdown {
+export function recommendedTackleLevel(rarity: FishData['rarity']): 1 | 2 | 3 {
+  if (rarity === 1) return 1;
+  if (rarity <= 3) return 2;
+  return 3;
+}
+
+const TACKLE_MATCH_POINTS = { 1:12, 2:22, 3:30, 4:40 } as const;
+
+export function encounterBreakdown(fish: FishData, stage: StageId, bait: BaitId, cast: number, tackleLevel = 1): EncounterBreakdown {
   if (!fish.habitat.includes(stage)) return { stage:0, rarity:0, localDensity:0, bait:0, distance:0, tackle:0, total:0 };
+  const tackleMatches = tackleLevel >= recommendedTackleLevel(fish.rarity);
   const breakdown = {
     stage:22,
     rarity:RARITY_POINTS[fish.rarity],
     localDensity:Math.round(fish.encounterWeight * 22),
     bait:fish.preferredBaits.includes(bait) ? 34 : fish.toleratedBaits.includes(bait) ? 14 : 0,
     distance:distancePoints(fish, cast),
-    tackle:Math.round(floatControl * 18 * Math.max(0, fish.rarity - 1)),
+    tackle:tackleMatches ? TACKLE_MATCH_POINTS[fish.rarity] : 0,
   };
   return { ...breakdown, total:Object.values(breakdown).reduce((sum, points) => sum + points, 0) };
 }
 
-export function encounterScore(fish: FishData, stage: StageId, bait: BaitId, cast: number, floatControl = 0): number {
-  return encounterBreakdown(fish, stage, bait, cast, floatControl).total;
+export function encounterScore(fish: FishData, stage: StageId, bait: BaitId, cast: number, tackleLevel = 1): number {
+  return encounterBreakdown(fish, stage, bait, cast, tackleLevel).total;
 }
 
-export function encounterChances(stage: StageId, bait: BaitId, cast: number, floatControl = 0): Partial<Record<FishData['id'], number>> {
+export function encounterChances(stage: StageId, bait: BaitId, cast: number, tackleLevel = 1): Partial<Record<FishData['id'], number>> {
   const candidates = Object.values(FISH).filter((fish) => fish.habitat.includes(stage));
-  const total = candidates.reduce((sum, fish) => sum + encounterScore(fish, stage, bait, cast, floatControl), 0);
-  return Object.fromEntries(candidates.map((fish) => [fish.id, encounterScore(fish, stage, bait, cast, floatControl) / total]));
+  const total = candidates.reduce((sum, fish) => sum + encounterScore(fish, stage, bait, cast, tackleLevel), 0);
+  return Object.fromEntries(candidates.map((fish) => [fish.id, encounterScore(fish, stage, bait, cast, tackleLevel) / total]));
 }
 
 export function sizeRank(fish: FishData, size: number): SizeRank {
@@ -51,9 +60,9 @@ export function sizeRank(fish: FishData, size: number): SizeRank {
   return '小';
 }
 
-export function chooseFish(stage: StageId, bait: BaitId, cast: number, random = Math.random, floatControl = 0): FishData {
+export function chooseFish(stage: StageId, bait: BaitId, cast: number, random = Math.random, tackleLevel = 1): FishData {
   const candidates = Object.values(FISH).filter((fish) => fish.habitat.includes(stage));
-  const weighted = candidates.map((fish) => ({ fish, weight: encounterScore(fish, stage, bait, cast, floatControl) }));
+  const weighted = candidates.map((fish) => ({ fish, weight: encounterScore(fish, stage, bait, cast, tackleLevel) }));
   const total = weighted.reduce((sum, item) => sum + item.weight, 0);
   let roll = random() * total;
   for (const item of weighted) {
