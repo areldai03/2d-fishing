@@ -278,8 +278,7 @@ class FishingApp {
       persistSave(this.save);
       this.playStory('shrineUnlock', () => {
         this.renderHome();
-        this.openShrineGacha();
-        this.toast('寄り道「沈み祠」｜最初の一投は老人の供物で引ける');
+        this.toast('寄り道「沈み祠」解放｜移動画面から橋の下へ向かおう');
       });
       return;
     }
@@ -366,8 +365,10 @@ class FishingApp {
     this.query('#menu-scene-caption').innerHTML = `<small>${config.eyebrow}</small><strong>${config.title}</strong>`;
     const pins = this.query('#map-pins');
     if (tab !== 'map') { pins.innerHTML = ''; return; }
-    pins.innerHTML = `<div class="map-landmark university"><i></i><span>東雲大学<small>第七実験棟</small></span></div><div class="map-landmark shop"><i></i><span>月波釣具店<small>川沿い商店街</small></span></div><div class="map-landmark future"><i></i><span>山上観測広場<small>未調査｜古い観測標が残る</small></span></div><button data-map-stage="mountain-stream" class="map-pin stream ${this.save.unlockedStages.includes('mountain-stream') ? '' : 'locked'}"><i></i><span>青葉渓流<small>${this.save.unlockedStages.includes('mountain-stream') ? '上流バス下車 → 山道' : '未調査'}</small></span></button><button data-map-stage="campus-river" class="map-pin river"><i></i><span>大学裏の川<small>研究室から徒歩3分</small></span></button><button data-map-stage="tsukinami-port" class="map-pin port ${this.save.unlockedStages.includes('tsukinami-port') ? '' : 'locked'}"><i></i><span>月波港<small>${this.save.unlockedStages.includes('tsukinami-port') ? '海岸線バス下車 → 港' : '未調査'}</small></span></button>`;
+    const shrineOpen = this.hasFlag('shrine-unlocked') || import.meta.env.DEV;
+    pins.innerHTML = `<div class="map-landmark university"><i></i><span>東雲大学<small>第七実験棟</small></span></div><div class="map-landmark shop"><i></i><span>月波釣具店<small>川沿い商店街</small></span></div><div class="map-landmark future"><i></i><span>山上観測広場<small>未調査｜古い観測標が残る</small></span></div><button data-map-stage="mountain-stream" class="map-pin stream ${this.save.unlockedStages.includes('mountain-stream') ? '' : 'locked'}"><i></i><span>青葉渓流<small>${this.save.unlockedStages.includes('mountain-stream') ? '上流バス下車 → 山道' : '未調査'}</small></span></button><button data-map-stage="campus-river" class="map-pin river"><i></i><span>大学裏の川<small>研究室から徒歩3分</small></span></button>${shrineOpen ? `<button data-map-shrine class="map-pin shrine"><i></i><span>沈み祠<small>大学裏・橋の下${import.meta.env.DEV && !this.hasFlag('shrine-unlocked') ? '｜確認用' : ''}</small></span></button>` : ''}<button data-map-stage="tsukinami-port" class="map-pin port ${this.save.unlockedStages.includes('tsukinami-port') ? '' : 'locked'}"><i></i><span>月波港<small>${this.save.unlockedStages.includes('tsukinami-port') ? '海岸線バス下車 → 港' : '未調査'}</small></span></button>`;
     pins.querySelectorAll<HTMLButtonElement>('[data-map-stage]').forEach((button) => button.addEventListener('click', () => this.travelTo(button.dataset.mapStage as StageId)));
+    pins.querySelector<HTMLButtonElement>('[data-map-shrine]')?.addEventListener('click', () => this.travelToShrine());
   }
 
   private renderHome(): void {
@@ -379,7 +380,7 @@ class FishingApp {
       <article class="quest-card ${home.actionReady ? 'ready' : ''}"><small>CURRENT OBJECTIVE</small><h3>${quest.title}</h3><p>${quest.description}</p><div class="quest-progress"><i style="width:${quest.progress}%"></i></div><em>${quest.counter}</em></article>
       <div class="home-actions">
         <button id="home-primary" class="pixel-button">${home.primaryLabel}<small>${home.primaryHint}</small></button>
-        <div class="home-side-actions"><button id="home-note" class="note-button">観測メモ<span>${Object.keys(this.save.records).length}種 / ${this.save.totalCaught}匹</span></button><button id="home-story-log" class="note-button story-log-button">回想ログ<span>出来事を読み返す</span></button>${this.hasFlag('shrine-unlocked') ? `<button id="home-shrine" class="note-button shrine-home-button">沈み祠<span>${this.save.shrineFreePullUsed ? `大魚の鱗 ${this.save.giantScales}枚` : '最初の一投 無料'}</span></button>` : ''}</div>
+        <div class="home-side-actions"><button id="home-note" class="note-button">観測メモ<span>${Object.keys(this.save.records).length}種 / ${this.save.totalCaught}匹</span></button><button id="home-story-log" class="note-button story-log-button">回想ログ<span>出来事を読み返す</span></button></div>
       </div>
       <p class="lab-message">${home.labMessage}</p>
     </div>`;
@@ -394,7 +395,6 @@ class FishingApp {
     });
     this.query('#home-note').addEventListener('click', () => { sfx('tap'); this.activateTab('memo'); });
     this.query('#home-story-log').addEventListener('click', () => { sfx('tap'); this.activateTab('story-log'); });
-    this.root.querySelector('#home-shrine')?.addEventListener('click', () => this.openShrineGacha());
   }
 
   private openShrineGacha(): void {
@@ -1229,11 +1229,27 @@ class FishingApp {
   }
 
   private renderMap(): void {
-    this.query('#dock').innerHTML = `<div class="section-heading"><div><small>FIELD MAP</small><h2>調査地点を選ぶ</h2></div><button id="settings" class="tiny-button">設定</button></div><p class="map-guide">地図のピン、または下の目的地を選択すると移動します。</p><div class="map-route">${Object.values(STAGES).map((stage, index) => { const open = this.save.unlockedStages.includes(stage.id); const active = stage.id === this.save.activeStage; const route = stage.id === 'campus-river' ? '研究室から徒歩3分' : stage.id === 'mountain-stream' ? '上流バス下車後、山道へ' : '海岸線バス下車後、河口へ'; const unknown = stage.id === 'tsukinami-port' ? '未調査の河口' : '未調査の上流'; return `<button data-stage="${stage.id}" class="stage-card ${active?'active':''} ${open?'':'locked'}" ${open?'':'disabled'}><i>${index+1}</i><span><small>${route}</small><b>${open?stage.name:unknown}</b><em>${active?'現在地':open?'ここへ移動':'調査条件が必要'}</em></span></button>`; }).join('')}</div>`;
+    const shrineOpen = this.hasFlag('shrine-unlocked') || import.meta.env.DEV;
+    this.query('#dock').innerHTML = `<div class="section-heading"><div><small>FIELD MAP</small><h2>調査地点を選ぶ</h2></div><button id="settings" class="tiny-button">設定</button></div><p class="map-guide">地図のピン、または下の目的地を選択すると移動します。</p><div class="map-route">${Object.values(STAGES).map((stage, index) => { const open = this.save.unlockedStages.includes(stage.id); const active = stage.id === this.save.activeStage; const route = stage.id === 'campus-river' ? '研究室から徒歩3分' : stage.id === 'mountain-stream' ? '上流バス下車後、山道へ' : '海岸線バス下車後、河口へ'; const unknown = stage.id === 'tsukinami-port' ? '未調査の河口' : '未調査の上流'; return `<button data-stage="${stage.id}" class="stage-card ${active?'active':''} ${open?'':'locked'}" ${open?'':'disabled'}><i>${index+1}</i><span><small>${route}</small><b>${open?stage.name:unknown}</b><em>${active?'現在地':open?'ここへ移動':'調査条件が必要'}</em></span></button>`; }).join('')}${shrineOpen ? `<button id="map-shrine-route" class="stage-card shrine-route"><i>寄</i><span><small>大学裏の川 → 橋の下</small><b>水守りの沈み祠</b><em>${import.meta.env.DEV && !this.hasFlag('shrine-unlocked') ? '確認用に入場できます' : this.save.shrineFreePullUsed ? `大魚の鱗 ${this.save.giantScales}枚` : '最初の一投は無料'}</em></span></button>` : ''}</div>`;
     this.query('#dock').querySelectorAll<HTMLButtonElement>('[data-stage]').forEach((button) => button.addEventListener('click', () => {
       this.travelTo(button.dataset.stage as StageId);
     }));
     this.root.querySelector('#settings')?.addEventListener('click', () => this.showSettings());
+    this.root.querySelector('#map-shrine-route')?.addEventListener('click', () => this.travelToShrine());
+  }
+
+  private travelToShrine(): void {
+    if (import.meta.env.DEV) {
+      if (!this.hasFlag('shrine-unlocked')) this.addFlag('shrine-unlocked');
+      const granted = this.save.giantScales < 12;
+      if (granted) this.save.giantScales = 12;
+      persistSave(this.save);
+      if (granted) this.toast('確認用：大魚の鱗を12枚まで補充しました');
+    } else if (!this.hasFlag('shrine-unlocked')) {
+      return this.toast('物語を進めると、橋の下へ降りられます');
+    }
+    sfx('tap');
+    this.openShrineGacha();
   }
 
   private travelTo(id: StageId): void {
