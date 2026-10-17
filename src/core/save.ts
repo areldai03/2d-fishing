@@ -19,6 +19,10 @@ export const createNewSave = (): SaveData => ({
   baitStock: { '練り餌':6, 'ミミズ':4, '川虫':0 },
   storyFlags: [],
   stageCatchCounts: {},
+  giantScales: 0,
+  shrineFreePullUsed: false,
+  shrineDust: 0,
+  shrineRewards: [],
 });
 
 export function loadSave(): SaveData {

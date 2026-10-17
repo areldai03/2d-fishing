@@ -79,10 +79,20 @@ export interface CatchItem {
 }
 
 export type AquariumKind = 'freshwater' | 'brackish';
+export type ShrineRewardId = 'river-grass' | 'moon-stone' | 'driftwood' | 'bubble-flask' | 'shrine-lantern' | 'crescent-panel';
 
 export interface AquariumResident extends CatchItem {
   stage: StageId;
   addedAt: string;
+}
+
+export interface ShrineRewardData {
+  id: ShrineRewardId;
+  name: string;
+  description: string;
+  rarity: 1 | 2 | 3;
+  weight: number;
+  asset: string;
 }
 
 export interface SaveData {
@@ -102,6 +112,10 @@ export interface SaveData {
   baitStock: Record<ConsumableBaitId, number>;
   storyFlags: string[];
   stageCatchCounts: Partial<Record<StageId, number>>;
+  giantScales: number;
+  shrineFreePullUsed: boolean;
+  shrineDust: number;
+  shrineRewards: ShrineRewardId[];
 }
 
 export interface StoryLine {

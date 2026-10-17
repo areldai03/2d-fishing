@@ -158,6 +158,22 @@ export const STORY: Record<string, StorySceneData> = {
       { speaker:'主人公', text:'河川水質モデルの解析終了通知が鳴った。僕は初めて、それを少しだけ後回しにした。', tone:'important' },
     ],
   },
+  shrineUnlock: {
+    id:'shrineUnlock', title:'寄り道｜水底の忘れ物', backdrop:'river',
+    archive:{ unlockFlag:'shrine-unlocked', label:'寄り道', summary:'古帽子の老人から、巨大魚の鱗を川へ返す「沈み祠」の作法を教わった。' },
+    lines:[
+      { speaker:'主人公', text:'研究室へ戻る途中、大学裏の川に古い帽子が見えた。昨日、銀色の魚影を見ていた人だ。' },
+      { speaker:'古帽子の老人', text:'……深みの主は、川へ戻したか。', portrait:'/assets/characters/mysterious-angler-silhouette-pixel-v1.png' },
+      { speaker:'主人公', text:'どうして、それを。あなたも青葉渓流にいたんですか。' },
+      { speaker:'古帽子の老人', text:'魚の鱗は、通った水を覚えている。大きく育った魚の鱗なら、なおさらだ。', portrait:'/assets/characters/mysterious-angler-silhouette-pixel-v1.png' },
+      { speaker:'主人公', text:'老人は橋の下を指した。渇水した年だけ石段が現れる、古い水守りの祠が沈んでいるらしい。' },
+      { speaker:'古帽子の老人', text:'大魚の鱗を三枚、川へ返す。祠の前へ糸を垂らし、重みが来たら自分で引き上げる。', portrait:'/assets/characters/mysterious-angler-silhouette-pixel-v1.png', tone:'important' },
+      { speaker:'主人公', text:'お供えをして、川底の物を持ち帰るんですか。収支が独特ですね。' },
+      { speaker:'古帽子の老人', text:'持ち帰るんじゃない。川が忘れていた物を、一度だけ借りる。最初の三枚は、わしが置いておいた。', portrait:'/assets/characters/mysterious-angler-silhouette-pixel-v1.png' },
+      { speaker:'主人公', text:'顔を上げると、老人は堤防の向こうへ消えていた。残ったのは、水面へ続く細い石段だけだった。', tone:'thought' },
+      { speaker:'主人公', text:'再現性は不明。けれど観測条件は明確だ。巨大魚の鱗、三枚。まずは一度、糸を垂らしてみよう。', tone:'important' },
+    ],
+  },
   chapter2Opening: {
     id:'chapter2Opening', title:'第二章｜夕暮れの港', backdrop:'night-lab',
     archive:{ unlockFlag:'chapter2-intro-seen', label:'第二章', summary:'古い観測帳の河口記録を検証するため、月波港へ向かうことにした。' },
