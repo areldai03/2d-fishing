@@ -1,5 +1,5 @@
 import { FISH } from '../data/fish';
-import type { AquariumKind, AquariumResident } from '../types';
+import type { AquariumKind, AquariumResident, ShrineRewardId } from '../types';
 
 interface SwimmingFish {
   resident: AquariumResident;
@@ -32,6 +32,7 @@ export class AquariumView {
     private readonly canvas: HTMLCanvasElement,
     residents: AquariumResident[],
     private readonly kind: AquariumKind,
+    private readonly decorations: ShrineRewardId[],
     private readonly onSelect: (resident: AquariumResident) => void,
   ) {
     const context = canvas.getContext('2d');
@@ -130,10 +131,12 @@ export class AquariumView {
       ctx.fillRect(x, 16 + index * 21, 36 + index % 3 * 13, index % 2 ? 1 : 2);
     }
 
+    this.drawShrineBackdrop(time);
     this.drawPlants(time, fresh);
     [...this.swimmers].sort((a,b) => a.depth - b.depth).forEach((fish) => this.drawFish(fish, time));
     this.drawBubbles(time);
     this.drawGravel(fresh);
+    this.drawShrineDecorations(time);
     ctx.strokeStyle = '#061923';
     ctx.lineWidth = 6;
     ctx.strokeRect(3, 3, this.width - 6, this.height - 6);
@@ -211,6 +214,92 @@ export class AquariumView {
         ctx.fillRect(x + sway + (segment % 2 ? -8 : 5), 190 - segment * 15, 10, 4);
       }
     });
+  }
+
+  private hasDecoration(id: ShrineRewardId): boolean {
+    return this.decorations.includes(id);
+  }
+
+  private drawShrineBackdrop(time: number): void {
+    if (!this.hasDecoration('crescent-panel')) return;
+    const ctx = this.context;
+    ctx.save();
+    ctx.globalAlpha = .7;
+    ctx.fillStyle = '#142d3b';
+    ctx.fillRect(112, 25, 120, 75);
+    ctx.fillStyle = '#b58b4c';
+    ctx.fillRect(108, 21, 128, 5);
+    ctx.fillRect(108, 100, 128, 5);
+    ctx.fillRect(108, 26, 5, 74);
+    ctx.fillRect(231, 26, 5, 74);
+    ctx.fillStyle = '#245f6d';
+    ctx.fillRect(118, 31, 108, 64);
+    ctx.fillStyle = '#d8ddbd';
+    const glow = 1 + Math.round(Math.sin(time * .8) * 1);
+    ctx.fillRect(159, 42, 29 + glow, 6);
+    ctx.fillRect(177, 48, 9, 9);
+    ctx.fillRect(171, 57, 10, 8);
+    ctx.fillRect(161, 64, 12, 6);
+    ctx.restore();
+  }
+
+  private drawShrineDecorations(time: number): void {
+    const ctx = this.context;
+    if (this.hasDecoration('driftwood')) {
+      ctx.fillStyle = '#3c3328';
+      ctx.fillRect(113, 191, 101, 10);
+      ctx.fillRect(132, 181, 48, 12);
+      ctx.fillRect(177, 175, 10, 20);
+      ctx.fillStyle = '#765c38';
+      ctx.fillRect(119, 187, 83, 6);
+      ctx.fillRect(137, 180, 39, 5);
+    }
+    if (this.hasDecoration('river-grass')) {
+      [83,94,105,116].forEach((x, index) => {
+        const sway = Math.round(Math.sin(time * .9 + index) * 3);
+        ctx.fillStyle = index % 2 ? '#4f8054' : '#2f674d';
+        ctx.fillRect(x + sway, 169 - index % 2 * 8, 5, 38 + index % 2 * 8);
+        ctx.fillRect(x + sway - 6, 175 - index * 3, 12, 4);
+      });
+    }
+    if (this.hasDecoration('moon-stone')) {
+      ctx.fillStyle = '#526b69';
+      ctx.fillRect(220, 185, 45, 19);
+      ctx.fillRect(228, 178, 30, 8);
+      ctx.fillStyle = '#9caaa0';
+      ctx.fillRect(228, 182, 28, 15);
+      ctx.fillStyle = '#e4e4c7';
+      ctx.fillRect(247, 181, 5, 5);
+      ctx.fillRect(242, 186, 7, 5);
+      ctx.fillRect(236, 191, 8, 4);
+    }
+    if (this.hasDecoration('bubble-flask')) {
+      ctx.fillStyle = '#c7e0d0';
+      ctx.fillRect(279, 176, 26, 27);
+      ctx.fillRect(285, 164, 14, 14);
+      ctx.fillStyle = '#4a8d87';
+      ctx.fillRect(283, 187, 18, 14);
+      ctx.fillStyle = '#d8ad5d';
+      ctx.fillRect(283, 161, 18, 6);
+      ctx.strokeStyle = '#e5f2d8cc';
+      ctx.lineWidth = 2;
+      for (let index = 0; index < 4; index++) {
+        const y = 163 - ((time * (9 + index) + index * 13) % 49);
+        ctx.strokeRect(290 + (index % 2) * 6, Math.round(y), 3 + index % 2, 3 + index % 2);
+      }
+    }
+    if (this.hasDecoration('shrine-lantern')) {
+      ctx.fillStyle = '#405857';
+      ctx.fillRect(27, 184, 35, 20);
+      ctx.fillRect(35, 159, 19, 27);
+      ctx.fillRect(28, 155, 33, 7);
+      ctx.fillStyle = '#d3a84d';
+      ctx.fillRect(40, 165, 10, 12);
+      ctx.fillStyle = `rgba(255,221,117,${.55 + Math.sin(time * 1.6) * .12})`;
+      ctx.fillRect(36, 162, 18, 18);
+      ctx.fillStyle = '#f5db7d';
+      ctx.fillRect(41, 166, 9, 10);
+    }
   }
 
   private drawBubbles(time: number): void {

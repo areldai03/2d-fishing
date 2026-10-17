@@ -1,5 +1,6 @@
 import './style.css';
 import './pattern.css';
+import './shrine.css';
 import { createGame } from './game/createGame';
 import { RiverScene } from './game/RiverScene';
 import { AquariumView } from './game/AquariumView';
@@ -9,6 +10,7 @@ import { chooseFish, completeTackleShopVisit, makeCatch, portSurveyReady, recomm
 import { biteWindowMs, canLandFish, createFightState, landingTolerance, specimenPower, stepFight, type FightState } from './core/fight';
 import { isLurePullOnCurrent, lureWindow, stepLureMarker, type PortTide } from './core/lure';
 import { baitAvailable, buyBait, buyOrEquip, consumeBait } from './core/shop';
+import { awardGiantScales, pullShrineReward, shrinePullAvailable, SHRINE_PULL_COST } from './core/shrineGacha';
 import { addStoryFlag, getCurrentQuest, getHomeStoryState, getObservationMilestones, hasStoryFlag } from './core/storyProgress';
 import { FISH, FISH_LIST } from './data/fish';
 import { BAITS } from './data/baits';
@@ -16,6 +18,7 @@ import { GEAR, CATEGORY_NAMES } from './data/equipment';
 import { STAGES } from './data/stages';
 import type { FishingSpotId } from './data/fishingSpots';
 import { STORY } from './data/story';
+import { SHRINE_REWARDS } from './data/shrineRewards';
 import { StoryPlayer } from './story/StoryPlayer';
 import { storyPortrait, storySpeakerName } from './story/characters';
 import { setBgm, sfx, type BgmTheme } from './audio';
@@ -53,6 +56,8 @@ class FishingApp {
   private lureFrame = 0;
   private lureLastFrame = 0;
   private aquariumView?: AquariumView;
+  private shrineFrame = 0;
+  private shrineReeling = false;
   private storyPlayer: StoryPlayer;
 
   constructor(root: HTMLElement) {
@@ -218,7 +223,7 @@ class FishingApp {
       });
     };
     showInfo(selected);
-    this.aquariumView = new AquariumView(overlay.querySelector<HTMLCanvasElement>('#aquarium-canvas')!, residents, kind, (resident) => {
+    this.aquariumView = new AquariumView(overlay.querySelector<HTMLCanvasElement>('#aquarium-canvas')!, residents, kind, this.save.shrineRewards, (resident) => {
       showInfo(resident);
       overlay.querySelectorAll('[data-resident]').forEach((button) => button.classList.toggle('selected', (button as HTMLElement).dataset.resident === resident.uid));
       sfx('tap');
@@ -268,6 +273,16 @@ class FishingApp {
     const activeTab = tab === 'memo' || tab === 'story-log' ? 'home' : tab;
     this.root.querySelectorAll<HTMLButtonElement>('.tabbar button').forEach((item) => item.classList.toggle('active', item.dataset.tab === activeTab));
     this.renderDock(tab);
+    if (tab === 'home' && this.save.chapter >= 2 && this.hasFlag('chapter1-complete') && !this.hasFlag('shrine-unlocked')) {
+      this.addFlag('shrine-unlocked');
+      persistSave(this.save);
+      this.playStory('shrineUnlock', () => {
+        this.renderHome();
+        this.openShrineGacha();
+        this.toast('寄り道「沈み祠」｜最初の一投は老人の供物で引ける');
+      });
+      return;
+    }
     if (tab === 'home' && this.save.chapter === 2 && !this.hasFlag('chapter2-intro-seen')) {
       this.addFlag('chapter2-intro-seen');
       if (!this.save.unlockedStages.includes('tsukinami-port')) this.save.unlockedStages.push('tsukinami-port');
@@ -364,7 +379,7 @@ class FishingApp {
       <article class="quest-card ${home.actionReady ? 'ready' : ''}"><small>CURRENT OBJECTIVE</small><h3>${quest.title}</h3><p>${quest.description}</p><div class="quest-progress"><i style="width:${quest.progress}%"></i></div><em>${quest.counter}</em></article>
       <div class="home-actions">
         <button id="home-primary" class="pixel-button">${home.primaryLabel}<small>${home.primaryHint}</small></button>
-        <div class="home-side-actions"><button id="home-note" class="note-button">観測メモ<span>${Object.keys(this.save.records).length}種 / ${this.save.totalCaught}匹</span></button><button id="home-story-log" class="note-button story-log-button">回想ログ<span>出来事を読み返す</span></button></div>
+        <div class="home-side-actions"><button id="home-note" class="note-button">観測メモ<span>${Object.keys(this.save.records).length}種 / ${this.save.totalCaught}匹</span></button><button id="home-story-log" class="note-button story-log-button">回想ログ<span>出来事を読み返す</span></button>${this.hasFlag('shrine-unlocked') ? `<button id="home-shrine" class="note-button shrine-home-button">沈み祠<span>${this.save.shrineFreePullUsed ? `大魚の鱗 ${this.save.giantScales}枚` : '最初の一投 無料'}</span></button>` : ''}</div>
       </div>
       <p class="lab-message">${home.labMessage}</p>
     </div>`;
@@ -379,6 +394,136 @@ class FishingApp {
     });
     this.query('#home-note').addEventListener('click', () => { sfx('tap'); this.activateTab('memo'); });
     this.query('#home-story-log').addEventListener('click', () => { sfx('tap'); this.activateTab('story-log'); });
+    this.root.querySelector('#home-shrine')?.addEventListener('click', () => this.openShrineGacha());
+  }
+
+  private openShrineGacha(): void {
+    sfx('tap');
+    setBgm('campus-river');
+    this.aquariumView?.destroy();
+    cancelAnimationFrame(this.shrineFrame);
+    this.shrineReeling = false;
+    const overlay = this.query('#overlay');
+    const rod = GEAR.find((gear) => gear.id === this.save.equipped.rod) ?? GEAR.find((gear) => gear.id === 'rod-1')!;
+    const owned = new Set(this.save.shrineRewards);
+    const free = !this.save.shrineFreePullUsed;
+    const canPull = shrinePullAvailable(this.save);
+    const collection = SHRINE_REWARDS.map((reward) => `<div data-shrine-reward="${reward.id}" class="shrine-collection-item ${owned.has(reward.id) ? 'owned' : ''}"><img src="${owned.has(reward.id) ? reward.asset : ''}" alt=""><i>${owned.has(reward.id) ? '★'.repeat(reward.rarity) : '?'}</i></div>`).join('');
+    overlay.innerHTML = `<div class="shrine-dimmer"><section class="shrine-screen">
+      <header class="shrine-header"><div><small>SUBMERGED WATER SHRINE</small><h2>水守りの沈み祠</h2></div><button id="shrine-close" aria-label="沈み祠を閉じる">×</button></header>
+      <div id="shrine-stage" class="shrine-stage" data-state="idle">
+        <img class="shrine-background" src="/assets/backgrounds/submerged-shrine-pixel-v1.png" alt="川底に沈んだ古い祠">
+        <div class="shrine-light"></div><div class="shrine-water-lines"></div>
+        <img class="shrine-rod" src="${rod.asset}" alt="${rod.name}"><i class="shrine-line"></i><i class="shrine-hook"></i>
+        <div class="shrine-offering"><i></i><b></b></div>
+        <div class="shrine-place"><small>大学裏・橋の下</small><strong>水底の石段</strong></div>
+      </div>
+      <section id="shrine-control" class="shrine-control">
+        <div class="shrine-balance"><span><i class="scale-pixel"></i>大魚の鱗 <b id="shrine-scales">${this.save.giantScales}</b>枚</span><span>水底の欠片 <b>${this.save.shrineDust}</b></span></div>
+        <div class="shrine-copy"><small id="shrine-step">OFFERING 01</small><h3 id="shrine-title">鱗を返し、糸を垂らす</h3><p id="shrine-help">水面の静かな場所へ投げる。重みが来たら、自分の手で引き上げよう。</p></div>
+        <div class="shrine-reel-meter"><i id="shrine-reel-fill"></i><b>水底</b><b>水面</b></div>
+        <button id="shrine-action" class="shrine-action" ${canPull ? '' : 'disabled'}>${canPull ? (free ? '最初の一投をする' : `鱗 ${SHRINE_PULL_COST}枚を供える`) : `鱗が ${SHRINE_PULL_COST}枚必要`}<small>${free ? '古帽子の老人が供えた鱗を使う' : '巨大魚を釣ると鱗を入手'}</small></button>
+      </section>
+      <footer class="shrine-footer"><div><small>WATER TANK COLLECTION</small><span>${collection}</span></div><em>${owned.size} / ${SHRINE_REWARDS.length}</em></footer>
+    </section></div>`;
+
+    const stage = overlay.querySelector<HTMLElement>('#shrine-stage')!;
+    const action = overlay.querySelector<HTMLButtonElement>('#shrine-action')!;
+    const title = overlay.querySelector<HTMLElement>('#shrine-title')!;
+    const help = overlay.querySelector<HTMLElement>('#shrine-help')!;
+    const step = overlay.querySelector<HTMLElement>('#shrine-step')!;
+    const fill = overlay.querySelector<HTMLElement>('#shrine-reel-fill')!;
+    let state: 'idle' | 'casting' | 'hooked' | 'revealed' = 'idle';
+    let progress = 0;
+    let lastTime = 0;
+
+    const close = () => {
+      cancelAnimationFrame(this.shrineFrame);
+      this.shrineReeling = false;
+      overlay.innerHTML = '';
+      setBgm(this.bgmForTab(this.currentTab));
+      this.renderHome();
+      sfx('tap');
+    };
+    const reveal = (result: Exclude<ReturnType<typeof pullShrineReward>, 'locked' | 'poor'>) => {
+      state = 'revealed';
+      stage.dataset.state = state;
+      this.shrineReeling = false;
+      cancelAnimationFrame(this.shrineFrame);
+      sfx('catch');
+      const rarity = `${'★'.repeat(result.reward.rarity)}${'☆'.repeat(3 - result.reward.rarity)}`;
+      const collectionItem = overlay.querySelector<HTMLElement>(`[data-shrine-reward="${result.reward.id}"]`);
+      if (collectionItem) {
+        collectionItem.classList.add('owned');
+        collectionItem.innerHTML = `<img src="${result.reward.asset}" alt="${result.reward.name}"><i>${'★'.repeat(result.reward.rarity)}</i>`;
+      }
+      const collectionCount = overlay.querySelector<HTMLElement>('.shrine-footer>em');
+      if (collectionCount) collectionCount.textContent = `${this.save.shrineRewards.length} / ${SHRINE_REWARDS.length}`;
+      overlay.querySelector<HTMLElement>('#shrine-control')!.innerHTML = `<article class="shrine-reward-card"><div class="shrine-reward-art"><i></i><img src="${result.reward.asset}" alt="${result.reward.name}"></div><div><small>${result.duplicate ? 'RIVER MEMORY' : 'NEW AQUARIUM DECOR'}</small><h3>${result.reward.name}</h3><b>${rarity}</b><p>${result.reward.description}</p>${result.duplicate ? `<em>所持済みの記憶が、水底の欠片 ${result.dustGained}個に変わった。</em>` : '<em>研究室の観測水槽へ、自動で設置された。</em>'}</div></article><div class="shrine-result-actions"><button id="shrine-aquarium" class="shrine-secondary">水槽で見る</button><button id="shrine-again" class="shrine-action">${shrinePullAvailable(this.save) ? 'もう一度、糸を垂らす' : '祠の記録を閉じる'}</button></div>`;
+      overlay.querySelector('#shrine-aquarium')?.addEventListener('click', () => {
+        cancelAnimationFrame(this.shrineFrame);
+        overlay.innerHTML = '';
+        setBgm(this.bgmForTab(this.currentTab));
+        this.openAquarium();
+      });
+      overlay.querySelector('#shrine-again')?.addEventListener('click', () => shrinePullAvailable(this.save) ? this.openShrineGacha() : close());
+    };
+    const reel = (time: number) => {
+      const dt = lastTime ? Math.min((time - lastTime) / 1000, .05) : 0;
+      lastTime = time;
+      progress = Math.max(0, Math.min(100, progress + (this.shrineReeling ? 42 : -10) * dt));
+      stage.style.setProperty('--reel-progress', `${progress}`);
+      stage.style.setProperty('--reel-y', `${76 - progress * .54}%`);
+      fill.style.width = `${progress}%`;
+      if (progress >= 100) {
+        const stored = (stage as HTMLElement & { shrineResult?: Exclude<ReturnType<typeof pullShrineReward>, 'locked' | 'poor'> }).shrineResult;
+        if (stored) reveal(stored);
+        return;
+      }
+      this.shrineFrame = requestAnimationFrame(reel);
+    };
+    const start = () => {
+      if (state !== 'idle') return;
+      const result = pullShrineReward(this.save);
+      if (result === 'poor') return this.toast(`大魚の鱗が${SHRINE_PULL_COST}枚必要です`);
+      if (result === 'locked') return this.toast('物語を進めると祠へ行けます');
+      persistSave(this.save);
+      (stage as HTMLElement & { shrineResult?: typeof result }).shrineResult = result;
+      state = 'casting';
+      stage.dataset.state = state;
+      action.disabled = true;
+      step.textContent = 'CASTING';
+      title.textContent = '祠の前へ仕掛けを落とす';
+      help.textContent = '水底へ届くまで、糸の動きを見よう。';
+      action.innerHTML = '水底へ沈んでいる…<small>まだ引かない</small>';
+      sfx('cast');
+      window.setTimeout(() => {
+        if (!stage.isConnected) return;
+        state = 'hooked';
+        stage.dataset.state = state;
+        action.disabled = false;
+        step.textContent = 'REEL IN';
+        title.textContent = '重みが掛かった！';
+        help.textContent = 'ボタンを長押しして引き上げる。離すと少しずつ水底へ戻る。';
+        action.innerHTML = '長押しで引き上げる<small>マウス / タッチ / Space</small>';
+        lastTime = 0;
+        this.shrineFrame = requestAnimationFrame(reel);
+        sfx('bite');
+      }, 900);
+    };
+    const startReeling = (event?: PointerEvent) => {
+      if (state === 'idle') { start(); return; }
+      if (state !== 'hooked') return;
+      this.shrineReeling = true;
+      action.classList.add('pressed');
+      if (event) action.setPointerCapture(event.pointerId);
+    };
+    const stopReeling = () => { this.shrineReeling = false; action.classList.remove('pressed'); };
+    action.addEventListener('pointerdown', startReeling);
+    action.addEventListener('pointerup', stopReeling);
+    action.addEventListener('pointercancel', stopReeling);
+    action.addEventListener('pointerleave', stopReeling);
+    overlay.querySelector('#shrine-close')?.addEventListener('click', close);
   }
 
   private renderObservationLog(): void {
@@ -812,7 +957,9 @@ class FishingApp {
     const iwanaChallengeEvent = fish.id === 'iwana' && this.fishingSpot === 'deep-pool' && item.size >= fish.thresholds[1] && this.hasFlag('deep-pool-clue-seen') && !this.hasFlag('iwana-challenge-seen');
     const firstPortCatchEvent = this.save.activeStage === 'tsukinami-port' && !this.hasFlag('first-port-catch-seen');
     const tournamentSuzukiEvent = fish.id === 'suzuki' && this.save.activeStage === 'tsukinami-port' && this.hasFlag('tournament-open') && !this.hasFlag('tournament-suzuki-seen') && item.size >= fish.thresholds[1];
+    const hadGiantRank = Boolean(this.save.records[fish.id]?.ranks.includes('巨大'));
     const result = recordCatch(this.save, item, this.save.activeStage);
+    const scalesGained = awardGiantScales(this.save, item, hadGiantRank);
     if (iwanaChallengeEvent) releaseCatch(this.save, item.uid);
     persistSave(this.save);
     this.updateMoney();
@@ -824,7 +971,7 @@ class FishingApp {
     const catchActions = iwanaChallengeEvent
       ? `<button id="catch-keep" class="primary">傷を記録する</button>`
       : `<div class="catch-actions"><button id="catch-aquarium" class="catch-secondary">${waterLabel}へ入れる</button><button id="catch-keep" class="primary">記録して持ち帰る</button></div>`;
-    overlay.innerHTML = `<div class="catch-dimmer"><section class="catch-card ${item.rank === '巨大' ? 'giant' : ''}"><div class="catch-rays"></div><p class="catch-label">${tags.map((tag) => `<span>${tag}</span>`).join('')}</p><div class="catch-fish-stage"><img src="${fish.sprite}" alt="${fish.name}"></div><div class="catch-result-info"><div class="catch-name-row"><h2>${fish.name}</h2><div class="catch-rarity"><span>RARITY</span><b aria-label="希少度 ${fish.rarity}">${'★'.repeat(fish.rarity)}${'☆'.repeat(4-fish.rarity)}</b></div></div><div class="catch-size"><strong>${item.size.toFixed(1)}</strong> cm <i>${item.rank}サイズ</i></div></div><p>${disposition}</p>${catchActions}</section></div>`;
+    overlay.innerHTML = `<div class="catch-dimmer"><section class="catch-card ${item.rank === '巨大' ? 'giant' : ''}"><div class="catch-rays"></div><p class="catch-label">${tags.map((tag) => `<span>${tag}</span>`).join('')}</p><div class="catch-fish-stage"><img src="${fish.sprite}" alt="${fish.name}"></div><div class="catch-result-info"><div class="catch-name-row"><h2>${fish.name}</h2><div class="catch-rarity"><span>RARITY</span><b aria-label="希少度 ${fish.rarity}">${'★'.repeat(fish.rarity)}${'☆'.repeat(4-fish.rarity)}</b></div></div><div class="catch-size"><strong>${item.size.toFixed(1)}</strong> cm <i>${item.rank}サイズ</i></div></div>${scalesGained ? `<div class="catch-scale-reward"><i class="scale-pixel"></i><span><b>大魚の鱗 +${scalesGained}</b><small>${scalesGained > 1 ? 'この魚種で初めての巨大記録' : '巨大魚の観測報酬'}</small></span></div>` : ''}<p>${disposition}</p>${catchActions}</section></div>`;
     const finishCatch = (tankMessage?: string) => {
       overlay.innerHTML = '';
       const chapterStarted = previousChapter === 0 && this.save.chapter === 1;
@@ -1116,12 +1263,13 @@ class FishingApp {
     window.addEventListener('keydown', (event) => {
       if (event.code !== 'Space') return;
       event.preventDefault();
-      if (this.phase === 'fight') this.isReeling = true;
+      if (this.root.querySelector('#overlay .shrine-stage[data-state="hooked"]')) this.shrineReeling = true;
+      else if (this.phase === 'fight') this.isReeling = true;
       else if (!this.query('#overlay').innerHTML && this.currentTab === 'fish') this.action();
       else if (!this.query('#overlay').innerHTML && this.currentTab === 'home') this.root.querySelector<HTMLButtonElement>('#home-primary')?.click();
       else (this.root.querySelector('.story-next, #overlay button') as HTMLButtonElement | null)?.click();
     });
-    window.addEventListener('keyup', (event) => { if (event.code === 'Space') this.isReeling = false; });
+    window.addEventListener('keyup', (event) => { if (event.code === 'Space') { this.isReeling = false; this.shrineReeling = false; } });
   }
 
   private updateMoney(): void { const money = this.root.querySelector('#money'); if (money) money.textContent = `${this.save.money.toLocaleString()} G`; }
