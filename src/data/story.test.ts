@@ -18,6 +18,7 @@ describe('story data', () => {
     expect(STORY.shrineUnlock.lines.some((line) => line.text.includes('鱗を三枚'))).toBe(true);
     expect(STORY.shrineUnlock.lines.some((line) => line.text.includes('祠そのもの'))).toBe(true);
     expect(STORY.shrineUnlock.lines.some((line) => line.text.includes('宝函'))).toBe(true);
+    expect(STORY.shrineUnlock.lines.some((line) => line.text.includes('水槽へ戻す'))).toBe(true);
     expect(STORY.portMidReport.lines.some((line) => line.text.includes('下げ潮'))).toBe(true);
     expect(STORY.tournamentSuzukiCaught.lines.some((line) => line.text.includes('ミカヅキではない'))).toBe(true);
     expect(Object.values(STORY).every((scene) => scene.lines.length > 0)).toBe(true);

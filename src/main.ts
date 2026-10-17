@@ -412,14 +412,14 @@ class FishingApp {
     overlay.innerHTML = `<div class="shrine-dimmer"><section class="shrine-screen">
       <header class="shrine-header"><div><small>SUBMERGED WATER SHRINE</small><h2>水守りの沈み祠</h2></div><button id="shrine-close" aria-label="沈み祠を閉じる">×</button></header>
       <div id="shrine-stage" class="shrine-stage" data-state="idle">
-        <img class="shrine-background shrine-surface-background" src="/assets/backgrounds/shrine-cast-surface-pixel-v1.png" alt="古い橋から見下ろす大学裏の川">
+        <img class="shrine-background shrine-surface-background" src="/assets/backgrounds/shrine-cast-surface-pixel-v2.png" alt="古い橋から見下ろす大学裏の川">
         <img class="shrine-background shrine-underwater-background" src="/assets/backgrounds/submerged-shrine-pixel-v1.png" alt="川底に沈んだ古い祠">
-        <div class="shrine-light"></div><div class="shrine-water-lines"></div>
+        <div class="shrine-light"></div><div class="shrine-water-lines"></div><div class="shrine-depth-wipe"></div>
         <img class="shrine-rod" src="${rod.asset}" alt="${rod.name}"><i class="shrine-cast-line"></i><i class="shrine-cast-float"></i><i class="shrine-line"></i>
-        <div class="shrine-treasure"><img src="/assets/shrine-rewards/water-treasure-chest.svg" alt="水底に沈んだ古い宝函"></div>
+        <div class="shrine-treasure"><img src="/assets/shrine-rewards/water-treasure-chest-pixel-v2.png" alt="水底に沈んだ古い宝函"></div>
         <div class="shrine-place shrine-place-surface"><small>大学裏・古い橋</small><strong>橋の上から投げる</strong></div>
         <div class="shrine-place shrine-place-underwater"><small>水深 3.8 M</small><strong>沈み祠・石段の脇</strong></div>
-        <div class="shrine-transition-copy"><small>VIEW SHIFT</small><b>水中の糸を追う</b></div>
+        <div class="shrine-transition-copy"><small>DIVE WITH THE LINE</small><b>糸を追って、水底へ</b></div>
       </div>
       <section id="shrine-control" class="shrine-control">
         <div class="shrine-balance"><span><i class="scale-pixel"></i>大魚の鱗 <b id="shrine-scales">${this.save.giantScales}</b>枚</span><span>水底の欠片 <b>${this.save.shrineDust}</b></span></div>
@@ -462,7 +462,7 @@ class FishingApp {
       }
       const collectionCount = overlay.querySelector<HTMLElement>('.shrine-footer>em');
       if (collectionCount) collectionCount.textContent = `${this.save.shrineRewards.length} / ${SHRINE_REWARDS.length}`;
-      overlay.querySelector<HTMLElement>('#shrine-control')!.innerHTML = `<article class="shrine-reward-card"><div class="shrine-reward-art"><i></i><img src="${result.reward.asset}" alt="${result.reward.name}"></div><div><small>${result.duplicate ? 'RIVER MEMORY' : 'NEW AQUARIUM DECOR'}</small><h3>${result.reward.name}</h3><b>${rarity}</b><p>${result.reward.description}</p>${result.duplicate ? `<em>所持済みの記憶が、水底の欠片 ${result.dustGained}個に変わった。</em>` : '<em>研究室の観測水槽へ、自動で設置された。</em>'}</div></article><div class="shrine-result-actions"><button id="shrine-aquarium" class="shrine-secondary">水槽で見る</button><button id="shrine-again" class="shrine-action">${shrinePullAvailable(this.save) ? 'もう一度、糸を垂らす' : '祠の記録を閉じる'}</button></div>`;
+      overlay.querySelector<HTMLElement>('#shrine-control')!.innerHTML = `<article class="shrine-reward-card"><div class="shrine-reward-art"><i></i><img src="${result.reward.asset}" alt="${result.reward.name}"></div><div><small>${result.duplicate ? 'RIVER MEMORY' : 'TREASURE RESTORED'}</small><h3>${result.reward.name}</h3><b>${rarity}</b><p>${result.reward.description}</p>${result.duplicate ? `<em>同じ川の記憶が、水底の欠片 ${result.dustGained}個に変わった。</em>` : '<em>宝函から取り出し、研究室の観測水槽へ戻した。</em>'}</div></article><div class="shrine-result-actions"><button id="shrine-aquarium" class="shrine-secondary">水槽で見る</button><button id="shrine-again" class="shrine-action">${shrinePullAvailable(this.save) ? '次の宝函を探す' : '祠の記録を閉じる'}</button></div>`;
       overlay.querySelector('#shrine-aquarium')?.addEventListener('click', () => {
         cancelAnimationFrame(this.shrineFrame);
         overlay.innerHTML = '';
