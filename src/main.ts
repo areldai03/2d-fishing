@@ -412,17 +412,20 @@ class FishingApp {
     overlay.innerHTML = `<div class="shrine-dimmer"><section class="shrine-screen">
       <header class="shrine-header"><div><small>SUBMERGED WATER SHRINE</small><h2>水守りの沈み祠</h2></div><button id="shrine-close" aria-label="沈み祠を閉じる">×</button></header>
       <div id="shrine-stage" class="shrine-stage" data-state="idle">
-        <img class="shrine-background" src="/assets/backgrounds/submerged-shrine-pixel-v1.png" alt="川底に沈んだ古い祠">
+        <img class="shrine-background shrine-surface-background" src="/assets/backgrounds/shrine-cast-surface-pixel-v1.png" alt="古い橋から見下ろす大学裏の川">
+        <img class="shrine-background shrine-underwater-background" src="/assets/backgrounds/submerged-shrine-pixel-v1.png" alt="川底に沈んだ古い祠">
         <div class="shrine-light"></div><div class="shrine-water-lines"></div>
-        <img class="shrine-rod" src="${rod.asset}" alt="${rod.name}"><i class="shrine-line"></i><i class="shrine-hook"></i>
-        <div class="shrine-offering"><i></i><b></b></div>
-        <div class="shrine-place"><small>大学裏・橋の下</small><strong>水底の石段</strong></div>
+        <img class="shrine-rod" src="${rod.asset}" alt="${rod.name}"><i class="shrine-cast-line"></i><i class="shrine-cast-float"></i><i class="shrine-line"></i>
+        <div class="shrine-treasure"><img src="/assets/shrine-rewards/water-treasure-chest.svg" alt="水底に沈んだ古い宝函"></div>
+        <div class="shrine-place shrine-place-surface"><small>大学裏・古い橋</small><strong>橋の上から投げる</strong></div>
+        <div class="shrine-place shrine-place-underwater"><small>水深 3.8 M</small><strong>沈み祠・石段の脇</strong></div>
+        <div class="shrine-transition-copy"><small>VIEW SHIFT</small><b>水中の糸を追う</b></div>
       </div>
       <section id="shrine-control" class="shrine-control">
         <div class="shrine-balance"><span><i class="scale-pixel"></i>大魚の鱗 <b id="shrine-scales">${this.save.giantScales}</b>枚</span><span>水底の欠片 <b>${this.save.shrineDust}</b></span></div>
-        <div class="shrine-copy"><small id="shrine-step">OFFERING 01</small><h3 id="shrine-title">鱗を返し、糸を垂らす</h3><p id="shrine-help">水面の静かな場所へ投げる。重みが来たら、自分の手で引き上げよう。</p></div>
+        <div class="shrine-copy"><small id="shrine-step">TREASURE TRACE 01</small><h3 id="shrine-title">祠の脇へ仕掛けを投げる</h3><p id="shrine-help">橋の上から水面の静かな場所を狙う。水中へ入ったら、見えるのは糸だけだ。</p></div>
         <div class="shrine-reel-meter"><i id="shrine-reel-fill"></i><b>水底</b><b>水面</b></div>
-        <button id="shrine-action" class="shrine-action" ${canPull ? '' : 'disabled'}>${canPull ? (free ? '最初の一投をする' : `鱗 ${SHRINE_PULL_COST}枚を供える`) : `鱗が ${SHRINE_PULL_COST}枚必要`}<small>${free ? '古帽子の老人が供えた鱗を使う' : '巨大魚を釣ると鱗を入手'}</small></button>
+        <button id="shrine-action" class="shrine-action" ${canPull ? '' : 'disabled'}>${canPull ? (free ? '宝函を探して投げる' : `鱗 ${SHRINE_PULL_COST}枚を納めて投げる`) : `鱗が ${SHRINE_PULL_COST}枚必要`}<small>${free ? '古帽子の老人が納めた鱗を使う' : '巨大魚を釣ると鱗を入手'}</small></button>
       </section>
       <footer class="shrine-footer"><div><small>WATER TANK COLLECTION</small><span>${collection}</span></div><em>${owned.size} / ${SHRINE_REWARDS.length}</em></footer>
     </section></div>`;
@@ -493,22 +496,29 @@ class FishingApp {
       stage.dataset.state = state;
       action.disabled = true;
       step.textContent = 'CASTING';
-      title.textContent = '祠の前へ仕掛けを落とす';
-      help.textContent = '水底へ届くまで、糸の動きを見よう。';
-      action.innerHTML = '水底へ沈んでいる…<small>まだ引かない</small>';
+      title.textContent = '橋の上から、静かな水面へ';
+      help.textContent = '竿を振り、石段へ続く流れに仕掛けを乗せる。';
+      action.innerHTML = '仕掛けが水中へ沈んでいる…<small>糸の先を追う</small>';
       sfx('cast');
       window.setTimeout(() => {
         if (!stage.isConnected) return;
-        state = 'hooked';
-        stage.dataset.state = state;
-        action.disabled = false;
-        step.textContent = 'REEL IN';
-        title.textContent = '重みが掛かった！';
-        help.textContent = 'ボタンを長押しして引き上げる。離すと少しずつ水底へ戻る。';
-        action.innerHTML = '長押しで引き上げる<small>マウス / タッチ / Space</small>';
-        lastTime = 0;
-        this.shrineFrame = requestAnimationFrame(reel);
-        sfx('bite');
+        stage.dataset.state = 'diving';
+        step.textContent = 'UNDERWATER';
+        title.textContent = '水中の糸を追う';
+        help.textContent = '竿は橋の上。水中では、祠の脇へ沈む糸だけが見える。';
+        window.setTimeout(() => {
+          if (!stage.isConnected) return;
+          state = 'hooked';
+          stage.dataset.state = state;
+          action.disabled = false;
+          step.textContent = 'TREASURE FOUND';
+          title.textContent = '古い宝函に掛かった！';
+          help.textContent = 'ボタンを長押しして箱を引き上げる。離すと水底へ少し戻る。';
+          action.innerHTML = '長押しで宝函を引き上げる<small>マウス / タッチ / Space</small>';
+          lastTime = 0;
+          this.shrineFrame = requestAnimationFrame(reel);
+          sfx('bite');
+        }, 650);
       }, 900);
     };
     const startReeling = (event?: PointerEvent) => {
