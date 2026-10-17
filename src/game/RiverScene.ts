@@ -5,6 +5,8 @@ import { GEAR } from '../data/equipment';
 
 export type WaterMood = 'idle' | 'cast' | 'waiting' | 'nibble' | 'bite' | 'fight' | 'splash';
 
+const ROD_PLACEMENT = { x:342, y:112, width:112, height:54, tipX:290, tipY:93 } as const;
+
 export class RiverScene extends Phaser.Scene {
   private stageId: StageId = 'campus-river';
   private mood: WaterMood = 'idle';
@@ -107,7 +109,7 @@ export class RiverScene extends Phaser.Scene {
     const visible = mood !== 'idle' && mood !== 'cast';
     this.bobber.setVisible(visible).setPosition(this.castX, this.castY);
     this.line.setVisible(visible).clear();
-    if (visible) this.line.lineStyle(1.5, 0xfff1c5, .9).lineBetween(389, 91, this.castX, this.castY - 9);
+    if (visible) this.line.lineStyle(1.5, 0xfff1c5, .9).lineBetween(ROD_PLACEMENT.tipX, ROD_PLACEMENT.tipY, this.castX, this.castY - 9);
     this.ripples.forEach((r) => r.setPosition(this.castX, this.castY + 12).setVisible(visible));
     this.fishShadow.setPosition(this.castX, this.castY + 32);
     this.fishShadow.setVisible(mood === 'fight');
@@ -163,7 +165,11 @@ export class RiverScene extends Phaser.Scene {
     }
     this.add.rectangle(0, 293, 390, 7, 0x0b2333, .72).setOrigin(0).setDepth(9);
 
-    this.add.image(342, 112, `tackle-${this.rodId}`).setDisplaySize(112, 54).setDepth(6).setAngle(-2);
+    this.add.image(ROD_PLACEMENT.x, ROD_PLACEMENT.y, `tackle-${this.rodId}`)
+      .setDisplaySize(ROD_PLACEMENT.width, ROD_PLACEMENT.height)
+      .setFlipX(true)
+      .setDepth(6)
+      .setAngle(-2);
     this.line = this.add.graphics().setDepth(7).setVisible(false);
     this.fishShadow = this.add.ellipse(205, 240, 96, 18, 0x071c29, .3).setDepth(3).setVisible(false);
     this.bobberBaseAngle = this.floatId === 'float-1' ? 76 : 68;
